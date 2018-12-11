@@ -1,0 +1,13 @@
+numpy
+tensorflow
+keras
+pymongo
+imblearn
+sklearn
+pandas
+binascii
+sacred
+matplotlib
+argparse
+json
+matplotlib
