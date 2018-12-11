@@ -1,48 +1,22 @@
 from __future__ import print_function
-#import matplotlib
-#matplotlib.use('Agg')
-import numpy as np
-import tensorflow as tf
-import random as rn
 import binascii
 from keras.callbacks import ModelCheckpoint, EarlyStopping
-from sacred.observers import MongoObserver
-from keras.callbacks import ModelCheckpoint, Callback
 from argparse import Namespace
-### We modified Pahikkala et al. (2014) dta_pred code for cross-val process ###
-
-import os
-os.environ['PYTHONHASHSEED'] = '0'
-
-np.random.seed(1)
-rn.seed(1)
-
-session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
-import keras
 from keras import backend as K
-tf.set_random_seed(0)
-sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
-K.set_session(sess)
-
 
 from .datahelper import *
-#import logging
-from itertools import product
-from keras.models import Sequential, load_model
-
-import sys, pickle, os
-import math, json, time
-import matplotlib.pyplot as plt
-
-from .arguments import argparser, logging
+from keras.models import load_model
+import os
+from .arguments import argparser
 from .emetrics import *
 from .utils import over_sampling, under_sampling
 from .model import standard_model
 
 from sacred import Experiment
+from sacred.observers import MongoObserver
 
-TABSY = "\t"
-figdir = "figures/"
+sess = tf.Session(graph=tf.get_default_graph())
+K.set_session(sess)
 
 def train_model( FLAGS ):
 

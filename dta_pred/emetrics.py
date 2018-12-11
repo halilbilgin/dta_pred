@@ -1,3 +1,5 @@
+## SOME OF THE METHODS ARE TAKEN FROM github.com/hkmztrk/deepdta
+
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import mean_squared_error, f1_score

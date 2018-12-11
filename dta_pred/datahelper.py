@@ -1,12 +1,8 @@
-import sys, re, math, time
-import numpy as np
-import matplotlib.pyplot as plt
+## SOME OF THE METHODS AND CLASSES ARE TAKEN FROM github.com/hkmztrk/deepdta
+
 import json
 import pickle
-import os
-import collections
 from collections import OrderedDict
-from matplotlib.pyplot import cm
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import KFold, PredefinedSplit
