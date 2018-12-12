@@ -22,7 +22,7 @@ if __name__=="__main__":
     mongo_conf = FLAGS.mongodb
     if mongo_conf != None:
         mongo_conf = FLAGS.mongodb.split(':')
-        ex.observers.append(MongoObserver.create(url=':'.join(mongo_conf[:2]), db_name=mongo_conf[2]))
+        ex.observers.append(MongoObserver.create(url=':'.join(mongo_conf[:-1]), db_name=mongo_conf[-1]))
 
     logging(str(FLAGS), FLAGS)
 
