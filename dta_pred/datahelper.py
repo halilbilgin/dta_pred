@@ -225,9 +225,11 @@ def get_train_test_split_by_drugs(all_drugs, n_drugs_in_test=70, seed=42):
     test_fold = np.ones(all_drugs.shape[0]) * -1
 
     test_samples = []
-    for drug in test_drugs:
-        willbe_added = list(np.where((~(all_drugs == drug)).sum(axis=1) == 0)[0])
+    for drug_ind in test_drugs:
+        willbe_added = list(np.where((~(all_drugs == unique_drugs[drug_ind, :])).sum(axis=1) == 0)[0])
         test_samples += willbe_added
+
+    assert len(test_samples) >= 1
 
     test_fold[test_samples] = 1
 

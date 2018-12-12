@@ -139,16 +139,10 @@ def argparser():
       help='Threshold to split data into binary classes'
   )
   parser.add_argument(
-      '--checkpoint_path',
+      '--output_path',
       type=str,
-      default='',
-      help='Path to write checkpoint file.'
-  )
-  parser.add_argument(
-      '--log_dir',
-      type=str,
-      default='/tmp',
-      help='Directory for log data.'
+      default='output/',
+      help='Path to use for output.'
   )
   parser.add_argument(
       '--mongodb',
@@ -170,7 +164,7 @@ def argparser():
   return FLAGS
 
 def logging(msg, FLAGS):
-  fpath = os.path.join( FLAGS.log_dir, "log.txt" )
+  fpath = os.path.join( FLAGS.log_path, "log.txt" )
   with open( fpath, "a" ) as fw:
     fw.write("%s\n" % msg)
   #print(msg)

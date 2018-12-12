@@ -10,7 +10,7 @@ import os
 from .emetrics import *
 from .utils import over_sampling, under_sampling, makedirs
 from .model import standard_model
-
+from .arguments import logging
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
 
@@ -22,7 +22,7 @@ def train_model( FLAGS ):
 
     param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
 
-    checkpoint_dir = os.path.join(FLAGS.log_dir, 'checkpoints')
+    checkpoint_dir = os.path.join(FLAGS.checkpoints_path)
 
     makedirs(checkpoint_dir)
 
@@ -39,7 +39,7 @@ def train_model( FLAGS ):
 
         val_start_index = int(len(tr_fold) * 0.8)
         val_fold = tr_fold[val_start_index:]
-        tr_fold = tr_fold[:val_start_index]
+        new_tr_fold = tr_fold[:val_start_index]
 
         if FLAGS.resampling == 'over':
             sampling_method = over_sampling
@@ -49,12 +49,12 @@ def train_model( FLAGS ):
             raise NotImplementedError()
 
         if FLAGS.resampling:
-            new_tr_fold, _ = sampling_method(pd.Series(tr_fold), pd.Series(all_train_Y[tr_fold] > 7))
+            new_tr_fold, _ = sampling_method(pd.Series(new_tr_fold), pd.Series(all_train_Y[new_tr_fold] > 7))
             new_tr_fold = new_tr_fold.values[:, 0]
             XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[
                 new_tr_fold]
         else:
-            XD_train, XT_train, Y_train = all_train_drugs[tr_fold], all_train_prots[tr_fold], all_train_Y[tr_fold]
+            XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[new_tr_fold]
 
         XD_val, XT_val, Y_val = all_train_drugs[val_fold], all_train_prots[val_fold], all_train_Y[val_fold]
         XD_test, XT_test, Y_test = all_train_drugs[test_fold], all_train_prots[test_fold], all_train_Y[test_fold]
@@ -68,14 +68,17 @@ def train_model( FLAGS ):
 
         gridmodel = load_model(checkpoint_file)
 
-        predicted_labels = gridmodel.predict([np.array(XD_test), np.array(XT_test)])[:, 0]
+        predicted_labels = gridmodel.predict([np.array(XD_test), np.array(XT_test)])
         results.append({
             'test_loss': mean_squared_error(Y_test, predicted_labels),
             'test_cindex': get_cindex(Y_test, predicted_labels),
             'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
             'test_f1': f1_score(Y_test > 7, predicted_labels > 7),
-            'train_val_hist': gridres.history
+            'train_val_hist': gridres.history,
+            'checkpoint_file': checkpoint_file
         })
+
+        logging('--REPEAT' +str(repeat_id) + '--\n' + str(results[-1]) + '\n----\n', FLAGS)
 
         if results[best_rmse_ind]['test_rmse'] > results[repeat_id]['test_rmse']:
             best_rmse_ind = repeat_id
@@ -87,9 +90,14 @@ def run_experiment(_run, FLAGS):
 
     results = train_model(FLAGS)
 
+    logging('---BEST RUN test results---', FLAGS)
+
     for metric, val in results.items():
         if metric[:4] == 'test':
             _run.log_scalar(metric, val)
+            logging(metric + '=' + str(val), FLAGS)
+
+    _run.add_artifact(results['checkpoint_file'], 'model_file')
 
     for metric, vals in results['train_val_hist'].items():
         prefix = 'train_'
