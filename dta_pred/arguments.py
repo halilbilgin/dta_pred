@@ -3,7 +3,12 @@ import os
 
 def argparser():
   parser = argparse.ArgumentParser()
-
+  parser.add_argument(
+      '--experiment_name',
+      type=str,
+      default='experiment',
+      help='Name of the experiment.'
+  )
   parser.add_argument(
       '--smi_window_length',
       type=int,
@@ -118,14 +123,8 @@ def argparser():
   parser.add_argument(
       '--dataset_path',
       type=str,
-      default='../../data/davis',
+      default='../../data/',
       help='Directory for input data.'
-  )
-  parser.add_argument(
-      '--dtc_path',
-      type=str,
-      default='../../data/dtc',
-      help='Directory for DTC data.'
   )
   parser.add_argument(
       '--dropout',
@@ -157,7 +156,12 @@ def argparser():
       default=None,
       help='MongoDB configuration'
   )
-
+  parser.add_argument(
+      '--seed',
+      type=int,
+      default=42,
+      help='Seed for ensuring reproducibility'
+  )
   FLAGS, unparsed = parser.parse_known_args()
 
   # check validity

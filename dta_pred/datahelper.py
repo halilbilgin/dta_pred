@@ -5,6 +5,7 @@ import pickle
 from collections import OrderedDict
 import pandas as pd
 import numpy as np
+from os import path
 from sklearn.model_selection import KFold, PredefinedSplit
 #from keras.preprocessing.sequence import pad_sequences
 
@@ -113,7 +114,7 @@ class DataSet(object):
         #self.NCLASSES = n_classes
         self.charseqset = CHARPROTSET
         self.charseqset_size = CHARPROTLEN
-        self.fpath = fpath
+        self.fpath = path.join(fpath, 'davis')
 
         self.charsmiset = CHARISOSMISET ###HERE CAN BE EDITED
         self.charsmiset_size = CHARISOSMILEN
@@ -124,14 +125,14 @@ class DataSet(object):
 
         print("Read %s start" % fpath)
 
-        ligands = json.load(open(fpath+"ligands_iso.txt"), object_pairs_hook=OrderedDict)
+        ligands = json.load(open(path.join(fpath, "ligands_iso.txt")), object_pairs_hook=OrderedDict)
 
         if self.protein_format == 'sequence':
-            proteins = json.load(open(fpath+"proteins.txt"), object_pairs_hook=OrderedDict)
+            proteins = json.load(open(path.join(fpath, "proteins.txt")), object_pairs_hook=OrderedDict)
         else:
-            proteins = json.load(open(fpath+"proteins_hhmake.txt"), object_pairs_hook=OrderedDict)
+            proteins = json.load(open(path.join(fpath, "proteins_hhmake.txt")), object_pairs_hook=OrderedDict)
 
-        Y = pickle.load(open(fpath + "Y","rb"), encoding='latin1')
+        Y = pickle.load(open(path.join(fpath, "Y"),"rb"), encoding='latin1')
 
         XD = []
         XT = []
@@ -181,6 +182,7 @@ def get_DTC_train(data_file, max_smi_len, max_seq_len, protein_format='sequence'
         indices = np.where(dtc_train['smiles']==d)[0]
 
         for ind in indices:
+
             XD[ind] = labeled_smiles
 
     if protein_format == 'sequence':
@@ -211,7 +213,7 @@ def get_train_test_split_by_drugs(all_drugs, n_drugs_in_test=70, seed=42):
 
     unique_drugs = np.unique(all_drugs, axis=0)
 
-    assert n_drugs_in_test <= unique_drugs.shape
+    assert n_drugs_in_test <= unique_drugs.shape[0]
 
     np.random.seed(seed)
     test_drugs = np.random.choice(unique_drugs.shape[0], n_drugs_in_test, )
@@ -281,7 +283,7 @@ def load_data(FLAGS):
 
     train_drugs, train_prots,  train_Y = prepare_interaction_pairs(XD, XT, Y, label_row_inds, label_col_inds)
 
-    XD_dtc, XT_dtc, Y_dtc = get_DTC_train(FLAGS.dtc_path+'train_hhmake.csv', FLAGS.max_smi_len, FLAGS.max_seq_len, FLAGS.protein_format)
+    XD_dtc, XT_dtc, Y_dtc = get_DTC_train(path.join(FLAGS.dataset_path, 'dtc', 'train_hhmake.csv'), FLAGS.max_smi_len, FLAGS.max_seq_len, FLAGS.protein_format)
 
     all_train_drugs = np.concatenate((np.asarray(train_drugs), np.asarray(XD_dtc)), axis=0)
     all_train_prots = np.concatenate((np.asarray(train_prots), np.asarray(XT_dtc)), axis=0)
@@ -292,6 +294,6 @@ def load_data(FLAGS):
 
     for i in range(0, 3):
         np.random.seed(FLAGS.seed)
-        shuffled_inds = np.random.shuffle(shuffled_inds)
+        np.random.shuffle(shuffled_inds)
 
     return all_train_drugs[shuffled_inds], all_train_prots[shuffled_inds], all_train_Y[shuffled_inds]

@@ -12,9 +12,6 @@ from .emetrics import *
 from .utils import over_sampling, under_sampling
 from .model import standard_model
 
-from sacred import Experiment
-from sacred.observers import MongoObserver
-
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
 
@@ -100,23 +97,3 @@ def run_experiment(_run, FLAGS):
 
         for i, val in enumerate(vals):
             _run.log_scalar(prefix+metric, val, step=i)
-
-if __name__=="__main__":
-    FLAGS = argparser()
-    FLAGS.log_dir = os.path(FLAGS.log_dir, FLAGS.experiment_name)
-
-    ex = Experiment(FLAGS.experiment_name)
-
-    if not os.path.exists(FLAGS.log_dir):
-        os.makedirs(FLAGS.log_dir)
-
-    mongo_conf = FLAGS.mongodb.split(':')
-    if mongo_conf != None:
-        ex.observers.append(MongoObserver.create(url=':'.join(mongo_conf[:2]), db_name=mongo_conf[2]))
-
-    ex.main(run_experiment)
-    ex.add_config(vars(FLAGS))
-
-    r = ex.run(config_updated={'args': FLAGS})
-
-

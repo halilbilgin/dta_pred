@@ -2,7 +2,11 @@ from keras.layers import Input, Embedding, Dense, Conv1D, GlobalMaxPooling1D, Gl
 from keras.layers.normalization import BatchNormalization
 from keras.layers import concatenate
 from keras.models import Model
-
+import tensorflow as tf
+from dta_pred.emetrics import cindex_score
+import keras.metrics
+keras.metrics.cindex_score = cindex_score
+from dta_pred import CHARISOSMILEN, CHARPROTLEN
 def standard_model(FLAGS):
     if FLAGS.drug_format == 'SMILES':
         XDinput = Input(shape=(FLAGS.max_smi_len,), dtype='int32')
@@ -19,7 +23,7 @@ def standard_model(FLAGS):
         raise NotImplementedError()
 
     if FLAGS.drug_format == 'SMILES':
-        encode_smiles = Embedding(input_dim=FLAGS.charsmiset_size+1, output_dim=128, input_length=FLAGS.max_smi_len)(XDinput)
+        encode_smiles = Embedding(input_dim=CHARISOSMILEN+1, output_dim=128, input_length=FLAGS.max_smi_len)(XDinput)
         for i in range(FLAGS.n_cnn_layers):
             encode_smiles = Conv1D(filters=FLAGS.num_windows, kernel_size=FLAGS.smi_window_length,  activation='relu', padding='valid',  strides=1)(encode_smiles)
 
@@ -33,7 +37,7 @@ def standard_model(FLAGS):
         encode_smiles = XDinput
 
     if FLAGS.protein_format == 'sequence':
-        encode_protein = Embedding(input_dim=FLAGS.charseqset_size+1, output_dim=128, input_length=FLAGS.max_seq_len)(XTinput)
+        encode_protein = Embedding(input_dim=CHARPROTLEN+1, output_dim=128, input_length=FLAGS.max_seq_len)(XTinput)
     else:
         encode_protein = XTinput
 
@@ -63,6 +67,6 @@ def standard_model(FLAGS):
     predictions = Dense(1, kernel_initializer='normal')(FC)
 
     interactionModel = Model(inputs=[XDinput, XTinput], outputs=[predictions])
-    interactionModel.compile(optimizer='adam', loss='mean_squared_error', metrics=[cindex_score, tf.contrib.metrics.f1_score])
+    interactionModel.compile(optimizer='adam', loss='mean_squared_error', metrics=[cindex_score])
 
     return interactionModel
