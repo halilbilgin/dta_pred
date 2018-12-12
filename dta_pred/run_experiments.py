@@ -7,9 +7,8 @@ from keras import backend as K
 from .datahelper import *
 from keras.models import load_model
 import os
-from .arguments import argparser
 from .emetrics import *
-from .utils import over_sampling, under_sampling
+from .utils import over_sampling, under_sampling, makedirs
 from .model import standard_model
 
 sess = tf.Session(graph=tf.get_default_graph())
@@ -24,7 +23,9 @@ def train_model( FLAGS ):
     param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
 
     checkpoint_dir = os.path.join(FLAGS.log_dir, 'checkpoints')
-    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    makedirs(checkpoint_dir)
+
 
     early_stopping_callback = EarlyStopping(monitor='val_loss', patience=25)
     results = []

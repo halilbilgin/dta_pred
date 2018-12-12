@@ -6,6 +6,7 @@ from collections import OrderedDict
 import pandas as pd
 import numpy as np
 from os import path
+import sys
 from sklearn.model_selection import KFold, PredefinedSplit
 #from keras.preprocessing.sequence import pad_sequences
 
@@ -74,22 +75,21 @@ def one_hot_smiles(line, MAX_SMI_LEN, smi_ch_ind):
     for i, ch in enumerate(line[:MAX_SMI_LEN]):
         X[i, (smi_ch_ind[ch]-1)] = 1
 
-    return X #.tolist()
+    return X
 
 def one_hot_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
     X = np.zeros((MAX_SEQ_LEN, len(smi_ch_ind)))
     for i, ch in enumerate(line[:MAX_SEQ_LEN]):
         X[i, (smi_ch_ind[ch])-1] = 1
 
-    return X #.tolist()
-
+    return X
 
 def label_smiles(line, MAX_SMI_LEN, smi_ch_ind):
     X = np.zeros(MAX_SMI_LEN)
     for i, ch in enumerate(line[:MAX_SMI_LEN]): #	x, smi_ch_ind, y
         X[i] = smi_ch_ind[ch]
 
-    return X #.tolist()
+    return X
 
 def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
     X = np.zeros(MAX_SEQ_LEN)
@@ -108,13 +108,14 @@ def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
 ## ######################## ## 
 # works for large dataset
 class DataSet(object):
-    def __init__(self, fpath, seqlen, smilen, protein_format='sequence'):
+    def __init__(self, dataset_path, seqlen, smilen, protein_format='sequence'):
         self.SEQLEN = seqlen
         self.SMILEN = smilen
         #self.NCLASSES = n_classes
         self.charseqset = CHARPROTSET
         self.charseqset_size = CHARPROTLEN
-        self.fpath = path.join(fpath, 'davis')
+        self.dataset_path = dataset_path
+        self.fpath = path.join(dataset_path, 'davis')
 
         self.charsmiset = CHARISOSMISET ###HERE CAN BE EDITED
         self.charsmiset_size = CHARISOSMILEN
@@ -132,7 +133,10 @@ class DataSet(object):
         else:
             proteins = json.load(open(path.join(fpath, "proteins_hhmake.txt")), object_pairs_hook=OrderedDict)
 
-        Y = pickle.load(open(path.join(fpath, "Y"),"rb"), encoding='latin1')
+        if sys.version_info > (3, 0):
+            Y = pickle.load(open(path.join(fpath, "Y"),"rb"), encoding='latin1')
+        else:
+            Y = pickle.load(open(path.join(fpath, "Y"),"rb"))
 
         XD = []
         XT = []
@@ -142,7 +146,7 @@ class DataSet(object):
                 XT.append(label_sequence(proteins[t], self.SEQLEN, self.charseqset))
         elif self.protein_format == 'pssm':
             for t in proteins.keys():
-                XT.append(get_PSSM(proteins[t], self.SEQLEN))
+                XT.append(get_PSSM(self.dataset_path, proteins[t], self.SEQLEN))
         else:
             raise NotImplementedError()
 
@@ -151,8 +155,8 @@ class DataSet(object):
 
         return XD, XT, Y
 
-def get_PSSM(data_file, max_seq_len):
-    pssm = np.loadtxt(data_file)[:max_seq_len, :]
+def get_PSSM(dataset_path, data_file, max_seq_len):
+    pssm = np.loadtxt(path.join(dataset_path, 'davis_dtc', 'hhmake_pssm', data_file.split('/')[-1]))[:max_seq_len, :]
 
     half_left = int((max_seq_len-pssm.shape[0])/2)
     half_right = max_seq_len-pssm.shape[0] - half_left
@@ -161,8 +165,8 @@ def get_PSSM(data_file, max_seq_len):
 
     return pssm
 
-def get_DTC_train(data_file, max_smi_len, max_seq_len, protein_format='sequence', with_label=True):
-    dtc_train = pd.read_csv(data_file)
+def get_DTC_train(dataset_path, data_file, max_smi_len, max_seq_len, protein_format='sequence', with_label=True):
+    dtc_train = pd.read_csv(path.join(dataset_path, data_file))
     dtc_train.drop('Unnamed: 0', axis=1, inplace=True)
 
     if with_label:
@@ -194,7 +198,7 @@ def get_DTC_train(data_file, max_smi_len, max_seq_len, protein_format='sequence'
                 XT[ind] = labeled_sequence
     else:
         for t in dtc_train['hhmake'].unique():
-            pssm_matrix = get_PSSM(t, max_seq_len)
+            pssm_matrix = get_PSSM(dataset_path, t, max_seq_len)
             indices = np.where(dtc_train['hhmake']==t)[0]
 
             for ind in indices:
@@ -269,7 +273,7 @@ def get_n_fold_by_drugs(all_drugs, n_splits=5):
     return PredefinedSplit(test_folds)
 
 def load_data(FLAGS):
-    dataset = DataSet( fpath = FLAGS.dataset_path,
+    dataset = DataSet( dataset_path = FLAGS.dataset_path,
                        seqlen = FLAGS.max_seq_len,
                        smilen = FLAGS.max_smi_len,
                        protein_format=FLAGS.protein_format)
@@ -283,7 +287,7 @@ def load_data(FLAGS):
 
     train_drugs, train_prots,  train_Y = prepare_interaction_pairs(XD, XT, Y, label_row_inds, label_col_inds)
 
-    XD_dtc, XT_dtc, Y_dtc = get_DTC_train(path.join(FLAGS.dataset_path, 'dtc', 'train_hhmake.csv'), FLAGS.max_smi_len, FLAGS.max_seq_len, FLAGS.protein_format)
+    XD_dtc, XT_dtc, Y_dtc = get_DTC_train(FLAGS.dataset_path, path.join('dtc', 'train_hhmake.csv'), FLAGS.max_smi_len, FLAGS.max_seq_len, FLAGS.protein_format)
 
     all_train_drugs = np.concatenate((np.asarray(train_drugs), np.asarray(XD_dtc)), axis=0)
     all_train_prots = np.concatenate((np.asarray(train_prots), np.asarray(XT_dtc)), axis=0)

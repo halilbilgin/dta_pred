@@ -169,9 +169,6 @@ def argparser():
 
   return FLAGS
 
-
-
-
 def logging(msg, FLAGS):
   fpath = os.path.join( FLAGS.log_dir, "log.txt" )
   with open( fpath, "a" ) as fw:

@@ -1,5 +1,14 @@
 import pandas as pd
 from sklearn.utils import resample
+import os
+import errno
+
+def makedirs(folder):
+    try:
+        os.makedirs(folder)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
 
 def under_sampling(X_train, y_train):
     df_all = pd.concat((X_train, pd.DataFrame({'value': y_train}, index=y_train.index)), axis=1)
