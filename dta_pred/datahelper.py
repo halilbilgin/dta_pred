@@ -99,8 +99,6 @@ def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
 
     return X #.tolist()
 
-
-
 ## ######################## ##
 #
 #  DATASET Class
@@ -108,25 +106,30 @@ def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
 ## ######################## ## 
 # works for large dataset
 class DataSet(object):
-    def __init__(self, dataset_path, seqlen, smilen, protein_format='sequence'):
+    def __init__(self, dataset_path, dataset_name, seqlen, smilen, protein_format='sequence', drug_format='labeled_smiles',
+                 mol2vec_model_path=None, mol2vec_radius=1):
         self.SEQLEN = seqlen
         self.SMILEN = smilen
         #self.NCLASSES = n_classes
         self.charseqset = CHARPROTSET
         self.charseqset_size = CHARPROTLEN
         self.dataset_path = dataset_path
-        self.fpath = path.join(dataset_path, 'davis')
+        self.fpath = path.join(dataset_path, dataset_name)
 
-        self.charsmiset = CHARISOSMISET ###HERE CAN BE EDITED
+        self.charsmiset = CHARISOSMILEN ###HERE CAN BE EDITED
         self.charsmiset_size = CHARISOSMILEN
         self.protein_format = protein_format
+        self.drug_format = drug_format
+
+        self.mol2vec_model_path = mol2vec_model_path
+        self.mol2vec_radius = mol2vec_radius
 
     def parse_data(self):
         fpath = self.fpath
 
         print("Read %s start" % fpath)
 
-        ligands = json.load(open(path.join(fpath, "ligands_iso.txt")), object_pairs_hook=OrderedDict)
+        ligands = json.load(open(path.join(fpath, "ligands_can.txt")), object_pairs_hook=OrderedDict)
 
         if self.protein_format == 'sequence':
             proteins = json.load(open(path.join(fpath, "proteins.txt")), object_pairs_hook=OrderedDict)
@@ -138,9 +141,46 @@ class DataSet(object):
         else:
             Y = pickle.load(open(path.join(fpath, "Y"),"rb"))
 
-        XD = []
-        XT = []
+        XT = self.process_proteins(proteins)
 
+        XD = self.process_ligands(ligands)
+
+        Y = np.mat(np.copy(Y))
+        XD, XT, Y = np.asarray(XD), np.asarray(XT), np.asarray(Y)
+        label_row_inds, label_col_inds = np.where(np.isnan(Y) == False)
+
+        return prepare_interaction_pairs(XD, XT, Y, label_row_inds, label_col_inds)
+
+    def process_ligands(self, ligands):
+        XD = []
+
+        if self.drug_format == 'labeled_smiles':
+            if type(ligands) == OrderedDict:
+                iterator = ligands.keys()
+            else:
+                iterator = range(ligands.shape[0])
+
+            for d in iterator:
+                print(ligands[d])
+                XD.append(label_smiles(ligands[d], self.SMILEN, self.charsmiset))
+        elif self.drug_format == 'mol2vec':
+            from rdkit.Chem import PandasTools
+            from mol2vec.features import mol2alt_sentence, MolSentence, sentences2vec
+            from gensim.models import word2vec
+
+            word2vec_model = word2vec.Word2Vec.load(self.mol2vec_model_path)
+            df_ligands = pd.DataFrame({'smiles': ligands})
+
+            PandasTools.AddMoleculeColumnToFrame(df_ligands, 'smiles', 'ROMol')
+            dtc_train = df_ligands[df_ligands['ROMol'].notnull()]
+            dtc_train.loc[:, 'mol-sentence'] = dtc_train.apply(
+                lambda x: MolSentence(mol2alt_sentence(x['ROMol'], self.mol2vec_radius)), axis=1)
+            XD = sentences2vec(dtc_train['mol-sentence'], word2vec_model, unseen='UNK')
+
+        return XD
+
+    def process_proteins(self, proteins):
+        XT = []
         if self.protein_format == 'sequence':
             for t in proteins.keys():
                 XT.append(label_sequence(proteins[t], self.SEQLEN, self.charseqset))
@@ -150,10 +190,46 @@ class DataSet(object):
         else:
             raise NotImplementedError()
 
-        for d in ligands.keys():
-            XD.append(label_smiles(ligands[d], self.SMILEN, self.charsmiset))
+        return XT
 
-        return XD, XT, Y
+class DTCDataset(DataSet):
+    def parse_data(self, with_label=True):
+        dtc_train = pd.read_csv(path.join(self.fpath, 'train_hhmake.csv'))
+        dtc_train.drop('Unnamed: 0', axis=1, inplace=True)
+
+        if with_label:
+            dtc_train = dtc_train.groupby(['inchi_key', 'uniprot_id']).aggregate({'value': np.median, 'smiles': 'first',
+                                                                                  'fasta': 'first',
+                                                                                  'hhmake': 'first'}).reset_index()
+
+        for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
+            dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
+
+        n_samples = dtc_train['smiles'].shape[0]
+
+        XD, XT = [1 for i in range(n_samples)], [1 for i in range(n_samples)]
+
+        XD_processed = self.process_ligands(dtc_train['smiles'].unique())
+
+        for i, smiles in dtc_train['smiles'].unique():
+            indices = np.where(dtc_train['smiles'] == smiles)[0]
+
+            for ind in indices:
+                XD[ind] = XD_processed[i]
+
+        XT_processed = self.process_proteins(dtc_train['fasta'].unique())
+        for i, fasta_seq in enumerate(dtc_train['fasta'].unique()):
+            indices = np.where(dtc_train['fasta'] == fasta_seq)[0]
+
+            for ind in indices:
+                XT[ind] = XT_processed[i]
+
+        assert len(XD) == len(XT) and len(XT) == dtc_train['smiles'].shape[0]
+
+        if with_label:
+            return XD, XT, dtc_train['value'].values
+        else:
+            return XD, XT
 
 def get_PSSM(dataset_path, data_file, max_seq_len):
     pssm = np.loadtxt(path.join(dataset_path, 'davis_dtc', 'hhmake_pssm', data_file.split('/')[-1]))[:max_seq_len, :]
@@ -164,52 +240,6 @@ def get_PSSM(dataset_path, data_file, max_seq_len):
     pssm = np.pad(pssm, [(half_left, half_right), (0, 0) ], 'constant')
 
     return pssm
-
-def get_DTC_train(dataset_path, data_file, max_smi_len, max_seq_len, protein_format='sequence', with_label=True):
-    dtc_train = pd.read_csv(path.join(dataset_path, data_file))
-    dtc_train.drop('Unnamed: 0', axis=1, inplace=True)
-
-    if with_label:
-        dtc_train = dtc_train.groupby(['inchi_key', 'uniprot_id']).aggregate({'value': np.median, 'smiles':'first',
-                                                                              'fasta': 'first',
-                                                                              'hhmake': 'first'}).reset_index()
-
-    for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
-        dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
-
-    n_samples = dtc_train['smiles'].shape[0]
-
-    XD, XT = [1 for i in range(n_samples)], [1 for i in range(n_samples)]
-
-    for d in dtc_train['smiles'].unique():
-        labeled_smiles = label_smiles(d, max_smi_len, CHARISOSMISET)
-        indices = np.where(dtc_train['smiles']==d)[0]
-
-        for ind in indices:
-
-            XD[ind] = labeled_smiles
-
-    if protein_format == 'sequence':
-        for t in dtc_train['fasta'].unique():
-            labeled_sequence = label_sequence(t, max_seq_len, CHARPROTSET)
-            indices = np.where(dtc_train['fasta']==t)[0]
-
-            for ind in indices:
-                XT[ind] = labeled_sequence
-    else:
-        for t in dtc_train['hhmake'].unique():
-            pssm_matrix = get_PSSM(dataset_path, t, max_seq_len)
-            indices = np.where(dtc_train['hhmake']==t)[0]
-
-            for ind in indices:
-                XT[ind] = pssm_matrix
-
-    assert len(XD) == len(XT) and len(XT) == dtc_train['smiles'].shape[0]
-
-    if with_label:
-        return XD, XT, dtc_train['value'].values
-    else:
-        return XD, XT
 
 def get_train_test_split_by_drugs(all_drugs, n_drugs_in_test=70, seed=42):
     if len(all_drugs.shape) == 1:
@@ -276,24 +306,33 @@ def get_n_fold_by_drugs(all_drugs, n_splits=5):
 
 def load_data(FLAGS):
     dataset = DataSet( dataset_path = FLAGS.dataset_path,
+                       dataset_name='davis',
                        seqlen = FLAGS.max_seq_len,
                        smilen = FLAGS.max_smi_len,
-                       protein_format=FLAGS.protein_format)
+                       protein_format=FLAGS.protein_format,
+                       drug_format=FLAGS.drug_format,
+                       mol2vec_model_path=FLAGS.mol2vec_model_path,
+                       mol2vec_radius=FLAGS.mol2vec_radius
+                       )
 
-    XD, XT, Y = dataset.parse_data()
-    XD, XT, Y = np.asarray(XD), np.asarray(XT), np.asarray(Y)
+    XD_davis, XT_davis, Y_davis = dataset.parse_data()
 
-    label_row_inds, label_col_inds = np.where(np.isnan(Y)==False)  #basically finds the point address of affinity [x,y]
+    dtc_dataset = DTCDataset(dataset_path=FLAGS.dataset_path,
+                        dataset_name='dtc',
+                        seqlen=FLAGS.max_seq_len,
+                        smilen=FLAGS.max_smi_len,
+                        protein_format=FLAGS.protein_format,
+                        drug_format=FLAGS.drug_format,
+                        mol2vec_model_path=FLAGS.mol2vec_model_path,
+                        mol2vec_radius=FLAGS.mol2vec_radius
+                           )
 
-    Y = np.mat(np.copy(Y))
+    XD_dtc, XT_dtc, Y_dtc = dtc_dataset.parse_data()
 
-    train_drugs, train_prots,  train_Y = prepare_interaction_pairs(XD, XT, Y, label_row_inds, label_col_inds)
+    all_train_drugs = np.concatenate((np.asarray(XD_davis), np.asarray(XD_dtc)), axis=0)
 
-    XD_dtc, XT_dtc, Y_dtc = get_DTC_train(FLAGS.dataset_path, path.join('dtc', 'train_hhmake.csv'), FLAGS.max_smi_len, FLAGS.max_seq_len, FLAGS.protein_format)
-
-    all_train_drugs = np.concatenate((np.asarray(train_drugs), np.asarray(XD_dtc)), axis=0)
-    all_train_prots = np.concatenate((np.asarray(train_prots), np.asarray(XT_dtc)), axis=0)
-    all_train_Y = np.concatenate((np.asarray(train_Y), np.asarray(Y_dtc)), axis=0)
+    all_train_prots = np.concatenate((np.asarray(XT_davis), np.asarray(XT_dtc)), axis=0)
+    all_train_Y = np.concatenate((np.asarray(Y_davis), np.asarray(Y_dtc)), axis=0)
     all_train_Y = -np.log10(all_train_Y/1e9)
 
     shuffled_inds = np.asarray([i for i in range(all_train_Y.shape[0])])

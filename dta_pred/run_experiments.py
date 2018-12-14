@@ -26,7 +26,6 @@ def train_model( FLAGS ):
 
     makedirs(checkpoint_dir)
 
-
     early_stopping_callback = EarlyStopping(monitor='val_loss', patience=25)
     results = []
     best_rmse_ind = 0
