@@ -2,6 +2,7 @@ import pandas as pd
 from sklearn.utils import resample
 import os
 import errno
+import math
 
 def makedirs(folder):
     try:
@@ -43,3 +44,7 @@ def over_sampling(X_train, y_train):
     X_upsampled = df_upsampled.drop('value', axis=1)
 
     return X_upsampled, y_upsampled
+
+
+def sigmoid(x):
+  return 1 / (1 + math.exp(-x))

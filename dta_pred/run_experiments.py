@@ -42,7 +42,7 @@ def train_model( FLAGS ):
 
         if FLAGS.resampling == 'over':
             sampling_method = over_sampling
-        elif FLAGS.resampling == 'down':
+        elif FLAGS.resampling == 'under':
             sampling_method = under_sampling
         else:
             raise NotImplementedError()
@@ -58,12 +58,16 @@ def train_model( FLAGS ):
         XD_val, XT_val, Y_val = all_train_drugs[val_fold], all_train_prots[val_fold], all_train_Y[val_fold]
         XD_test, XT_test, Y_test = all_train_drugs[test_fold], all_train_prots[test_fold], all_train_Y[test_fold]
 
+        K.clear_session()
+
         gridmodel = standard_model(FLAGS)
 
         gridres = gridmodel.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
                       epochs=FLAGS.num_epoch,
                       validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
                       , callbacks=[early_stopping_callback, checkpoint_callback], verbose=2)
+        K.clear_session()
+        del gridmodel
 
         gridmodel = load_model(checkpoint_file)
 

@@ -116,7 +116,7 @@ class DataSet(object):
         self.dataset_path = dataset_path
         self.fpath = path.join(dataset_path, dataset_name)
 
-        self.charsmiset = CHARISOSMILEN ###HERE CAN BE EDITED
+        self.charsmiset = CHARISOSMISET ###HERE CAN BE EDITED
         self.charsmiset_size = CHARISOSMILEN
         self.protein_format = protein_format
         self.drug_format = drug_format
@@ -161,7 +161,6 @@ class DataSet(object):
                 iterator = range(ligands.shape[0])
 
             for d in iterator:
-                print(ligands[d])
                 XD.append(label_smiles(ligands[d], self.SMILEN, self.charsmiset))
         elif self.drug_format == 'mol2vec':
             from rdkit.Chem import PandasTools
@@ -181,11 +180,17 @@ class DataSet(object):
 
     def process_proteins(self, proteins):
         XT = []
+        if type(proteins) == OrderedDict:
+            iterator = proteins.keys()
+        else:
+            iterator = range(proteins.shape[0])
+
         if self.protein_format == 'sequence':
-            for t in proteins.keys():
+
+            for t in iterator:
                 XT.append(label_sequence(proteins[t], self.SEQLEN, self.charseqset))
         elif self.protein_format == 'pssm':
-            for t in proteins.keys():
+            for t in iterator:
                 XT.append(get_PSSM(self.dataset_path, proteins[t], self.SEQLEN))
         else:
             raise NotImplementedError()
@@ -211,13 +216,14 @@ class DTCDataset(DataSet):
 
         XD_processed = self.process_ligands(dtc_train['smiles'].unique())
 
-        for i, smiles in dtc_train['smiles'].unique():
+        for i, smiles in enumerate(dtc_train['smiles'].unique()):
             indices = np.where(dtc_train['smiles'] == smiles)[0]
 
             for ind in indices:
                 XD[ind] = XD_processed[i]
 
-        XT_processed = self.process_proteins(dtc_train['fasta'].unique())
+        XT_processed = self.process_proteins(dtc_train['hhmake' if self.protein_format =='pssm' else 'fasta'].unique())
+
         for i, fasta_seq in enumerate(dtc_train['fasta'].unique()):
             indices = np.where(dtc_train['fasta'] == fasta_seq)[0]
 

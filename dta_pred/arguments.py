@@ -161,7 +161,7 @@ def argparser():
     parser.add_argument(
         '--mol2vec_model_path',
         type=str,
-        default="",
+        default="models/mol2vec/model_300dim.pkl",
         help='Mol2vec model path. Used if drug_format="mol2vec"'
     )
     parser.add_argument(
@@ -169,6 +169,19 @@ def argparser():
         type=int,
         default=1,
         help='Radius utilized for Morgan algorithm. Used if drug_format="mol2vec"'
+    )
+    parser.add_argument(
+        '--mol2vec_output_dim',
+        type=int,
+        default=300,
+        help='Output dimension of mol2vec model. Used if drug_format="mol2vec"'
+    )
+
+    parser.add_argument(
+        '--loss',
+        type=str,
+        default='mean_squared_error',
+        help='Loss function. It can take mean_squared_error and crossentropy_mse_combined'
     )
 
     FLAGS, unparsed = parser.parse_known_args()
