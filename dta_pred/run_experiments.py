@@ -13,21 +13,25 @@ from .arguments import logging
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
 
-def train_model(FLAGS):
-
+def get_dataset(FLAGS):
     all_train_drugs, all_train_prots, all_train_Y = load_data(FLAGS)
 
-    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, 50, seed=FLAGS.seed)
-    tr_fold, val_fold = get_train_test_split_by_drugs(all_train_drugs[tr_fold], 50, seed=FLAGS.seed)
+    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, 70, seed=FLAGS.seed)
+
+    new_tr_fold, val_fold = get_train_test_split_by_drugs(all_train_drugs[tr_fold], 70, seed=FLAGS.seed)
+    val_fold = tr_fold[val_fold]
+    new_tr_fold = tr_fold[new_tr_fold]
+    print("Train: "+str(len(new_tr_fold))+" validation: "+str(len(val_fold))+\
+                   " and test set:"+str(len(test_fold)))
+
+    sampling_method = None
     if FLAGS.resampling == 'over':
         sampling_method = over_sampling
     elif FLAGS.resampling == 'under':
         sampling_method = under_sampling
-    elif FLAGS.resampling is not None:
-        raise NotImplementedError()
 
-    if FLAGS.resampling:
-        new_tr_fold, _ = sampling_method(pd.Series(tr_fold), pd.Series(all_train_Y[tr_fold] > 7))
+    if sampling_method:
+        new_tr_fold, _ = sampling_method(pd.Series(new_tr_fold), pd.Series(all_train_Y[new_tr_fold] > 7))
         new_tr_fold = new_tr_fold.values[:, 0]
         XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[
             new_tr_fold]
@@ -36,6 +40,13 @@ def train_model(FLAGS):
 
     XD_val, XT_val, Y_val = all_train_drugs[val_fold], all_train_prots[val_fold], all_train_Y[val_fold]
     XD_test, XT_test, Y_test = all_train_drugs[test_fold], all_train_prots[test_fold], all_train_Y[test_fold]
+
+    return XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test
+
+def train_model(FLAGS):
+
+    XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
+            Y_train, Y_val, Y_test = get_dataset(FLAGS)
 
     param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
 
@@ -71,7 +82,7 @@ def train_model(FLAGS):
             'test_loss': mean_squared_error(Y_test, predicted_labels),
             'test_cindex': get_cindex(Y_test, predicted_labels),
             'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
-            'test_f1': f1_score(Y_test > 7, predicted_labels > 7),
+            'test_f1': f1_score(Y_test > FLAGS.binary_th, predicted_labels > FLAGS.binary_th),
             'train_val_hist': gridres.history,
             'checkpoint_file': checkpoint_file
         })
@@ -96,7 +107,7 @@ def run_experiment(_run, FLAGS):
             _run.log_scalar(metric, val)
             logging(metric + '=' + str(val), FLAGS)
 
-    _run.add_artifact(results['checkpoint_file'], 'model_file')
+    #_run.add_artifact(results['checkpoint_file'], 'model_file')
 
     for metric, vals in results['train_val_hist'].items():
         prefix = 'train_'

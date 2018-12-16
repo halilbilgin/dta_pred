@@ -20,6 +20,13 @@ def argparser():
         help='motif filter length'
     )
     parser.add_argument(
+        '--n_cnn_layers',
+        type=int,
+        default=3,
+        help='Number of CNN layers'
+    )
+
+    parser.add_argument(
         '--num_windows',
         type=int,
         help='Number of filters in CNNs'
@@ -31,35 +38,26 @@ def argparser():
         help='Number of neurons in fully connected hidden layers.'
     )
     parser.add_argument(
-        '--n_cnn_layers',
-        type=int,
-        default=3,
-        help='Number of CNN layers'
+        '--pooling_type',
+        type=str,
+        default="GlobalMaxPooling",
+        help='Pool type. i.e. MaxPooling, GlobalAveragePooling'
     )
+
     parser.add_argument(
         '--resampling',
         type=str,
         default='over',
         help='Resampling method for train set. It can take over, under and None'
     )
-    parser.add_argument(
-        '--pool_size',
-        type=int,
-        default=2,
-        help='Pool size to use if pooling_type is MaxPooling'
-    )
-    parser.add_argument(
-        '--pooling_type',
-        type=str,
-        default="GlobalMaxPooling",
-        help='Pool type. i.e. MaxPooling, GlobalAveragePooling'
-    )
+
     parser.add_argument(
         '--n_fc_layers',
         type=int,
         default=1,
         help='Number of Fully Connected layers'
     )
+
     parser.add_argument(
         '--max_seq_len',
         type=int,
@@ -78,11 +76,7 @@ def argparser():
         default='sequence',
         help='Format of the proteins, i.e. sequence, pssm'
     )
-    parser.add_argument(
-        '--drug_vae_code_len',
-        type=int,
-        help='Length of the feature representation vector, only used if drug_format="VAE_code"'
-    )
+
     # for learning
     parser.add_argument(
         '--learning_rate',
@@ -108,23 +102,26 @@ def argparser():
         default=0,
         help='Whether apply batch normalization in fully connected layers or not'
     )
-    parser.add_argument(
-        '--dataset_path',
-        type=str,
-        default='../../data/',
-        help='Directory for input data.'
-    )
+
     parser.add_argument(
         '--dropout',
         type=float,
         default=0.4,
         help='Dropout level.'
     )
+
     parser.add_argument(
         '--binary_th',
         type=float,
-        default=0.0,
+        default=7.0,
         help='Threshold to split data into binary classes'
+    )
+
+    parser.add_argument(
+        '--dataset_path',
+        type=str,
+        default='../../data/',
+        help='Directory for input data.'
     )
     parser.add_argument(
         '--output_path',
