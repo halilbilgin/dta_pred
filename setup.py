@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='dta_pred',
-      version='0.5',
+      version='0.6',
       description='A specialized deep learning library for protein drug affinity prediction.',
       author='Halil Bilgin',
       author_email='bilginhalil@gmail.com',
