@@ -61,12 +61,6 @@ def argparser():
         help='Number of Fully Connected layers'
     )
     parser.add_argument(
-        '--num_classes',
-        type=int,
-        default=0,
-        help='Number of classes (families).'
-    )
-    parser.add_argument(
         '--max_seq_len',
         type=int,
         default=0,
@@ -84,7 +78,6 @@ def argparser():
         default='sequence',
         help='Format of the proteins, i.e. sequence, pssm'
     )
-
     parser.add_argument(
         '--drug_vae_code_len',
         type=int,
@@ -151,7 +144,6 @@ def argparser():
         default=42,
         help='Seed for ensuring reproducibility'
     )
-
     parser.add_argument(
         '--drug_format',
         type=str,
@@ -161,7 +153,7 @@ def argparser():
     parser.add_argument(
         '--mol2vec_model_path',
         type=str,
-        default="models/mol2vec/model_300dim.pkl",
+        default="trained_models/mol2vec/model_300dim.pkl",
         help='Mol2vec model path. Used if drug_format="mol2vec"'
     )
     parser.add_argument(
@@ -176,7 +168,18 @@ def argparser():
         default=300,
         help='Output dimension of mol2vec model. Used if drug_format="mol2vec"'
     )
-
+    parser.add_argument(
+        '--biovec_model_path',
+        type=str,
+        default='trained_models/biovec/swissprot-reviewed.model',
+        help='Output dimension of biovec model. Used if protein_format="biovec"'
+    )
+    parser.add_argument(
+        '--biovec_output_dim',
+        type=int,
+        default=300,
+        help='Output dimension of biovec model. Used if protein_format="biovec"'
+    )
     parser.add_argument(
         '--loss',
         type=str,

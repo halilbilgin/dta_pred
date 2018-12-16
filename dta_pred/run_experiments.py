@@ -2,23 +2,40 @@ from __future__ import print_function
 import binascii
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from argparse import Namespace
-from keras import backend as K
 
 from .datahelper import *
 from keras.models import load_model
 import os
 from .emetrics import *
 from .utils import over_sampling, under_sampling, makedirs
-from .model import standard_model
+from dta_pred.models.dnn_model import dnn_model
 from .arguments import logging
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
 
-def train_model( FLAGS ):
+def train_model(FLAGS):
 
     all_train_drugs, all_train_prots, all_train_Y = load_data(FLAGS)
 
-    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, 70, seed=FLAGS.seed)
+    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, 50, seed=FLAGS.seed)
+    tr_fold, val_fold = get_train_test_split_by_drugs(all_train_drugs[tr_fold], 50, seed=FLAGS.seed)
+    if FLAGS.resampling == 'over':
+        sampling_method = over_sampling
+    elif FLAGS.resampling == 'under':
+        sampling_method = under_sampling
+    elif FLAGS.resampling is not None:
+        raise NotImplementedError()
+
+    if FLAGS.resampling:
+        new_tr_fold, _ = sampling_method(pd.Series(tr_fold), pd.Series(all_train_Y[tr_fold] > 7))
+        new_tr_fold = new_tr_fold.values[:, 0]
+        XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[
+            new_tr_fold]
+    else:
+        XD_train, XT_train, Y_train = all_train_drugs[tr_fold], all_train_prots[tr_fold], all_train_Y[tr_fold]
+
+    XD_val, XT_val, Y_val = all_train_drugs[val_fold], all_train_prots[val_fold], all_train_Y[val_fold]
+    XD_test, XT_test, Y_test = all_train_drugs[test_fold], all_train_prots[test_fold], all_train_Y[test_fold]
 
     param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
 
@@ -36,31 +53,9 @@ def train_model( FLAGS ):
         checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
                                               save_best_only=True)
 
-        val_start_index = int(len(tr_fold) * 0.8)
-        val_fold = tr_fold[val_start_index:]
-        new_tr_fold = tr_fold[:val_start_index]
-
-        if FLAGS.resampling == 'over':
-            sampling_method = over_sampling
-        elif FLAGS.resampling == 'under':
-            sampling_method = under_sampling
-        else:
-            raise NotImplementedError()
-
-        if FLAGS.resampling:
-            new_tr_fold, _ = sampling_method(pd.Series(new_tr_fold), pd.Series(all_train_Y[new_tr_fold] > 7))
-            new_tr_fold = new_tr_fold.values[:, 0]
-            XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[
-                new_tr_fold]
-        else:
-            XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[new_tr_fold]
-
-        XD_val, XT_val, Y_val = all_train_drugs[val_fold], all_train_prots[val_fold], all_train_Y[val_fold]
-        XD_test, XT_test, Y_test = all_train_drugs[test_fold], all_train_prots[test_fold], all_train_Y[test_fold]
-
         K.clear_session()
 
-        gridmodel = standard_model(FLAGS)
+        gridmodel = dnn_model(FLAGS)
 
         gridres = gridmodel.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
                       epochs=FLAGS.num_epoch,
@@ -87,6 +82,7 @@ def train_model( FLAGS ):
             best_rmse_ind = repeat_id
 
     return results[best_rmse_ind]
+
 
 def run_experiment(_run, FLAGS):
     FLAGS = Namespace(**vars(FLAGS))

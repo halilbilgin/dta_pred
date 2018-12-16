@@ -17,15 +17,6 @@ from sklearn.model_selection import KFold, PredefinedSplit
 #
 ## ######################## ## 
 
-# CHARPROTSET = { 'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5, 'H': 6, \
-#             'I': 7, 'K': 8, 'L': 9, 'M': 10, 'N': 11, 'P': 12, 'Q': 13, \
-#             'R': 14, 'S': 15, 'T': 16, 'V': 17, 'W': 18, 'Y': 19, 'X': 20, \
-#             'O': 20, 'U': 20,
-#             'B': (2, 11),
-#             'Z': (3, 13),
-#             'J': (7, 9) }
-# CHARPROTLEN = 21
-
 CHARPROTSET = { "A": 1, "C": 2, "B": 3, "E": 4, "D": 5, "G": 6,
                 "F": 7, "I": 8, "H": 9, "K": 10, "M": 11, "L": 12,
                 "O": 13, "N": 14, "Q": 15, "P": 16, "S": 17, "R": 18,
@@ -34,20 +25,6 @@ CHARPROTSET = { "A": 1, "C": 2, "B": 3, "E": 4, "D": 5, "G": 6,
                 "Z": 25 }
 
 CHARPROTLEN = 25
-
-CHARCANSMISET = { "#": 1, "%": 2, ")": 3, "(": 4, "+": 5, "-": 6,
-                  ".": 7, "1": 8, "0": 9, "3": 10, "2": 11, "5": 12,
-                  "4": 13, "7": 14, "6": 15, "9": 16, "8": 17, "=": 18,
-                  "A": 19, "C": 20, "B": 21, "E": 22, "D": 23, "G": 24,
-                  "F": 25, "I": 26, "H": 27, "K": 28, "M": 29, "L": 30,
-                  "O": 31, "N": 32, "P": 33, "S": 34, "R": 35, "U": 36,
-                  "T": 37, "W": 38, "V": 39, "Y": 40, "[": 41, "Z": 42,
-                  "]": 43, "_": 44, "a": 45, "c": 46, "b": 47, "e": 48,
-                  "d": 49, "g": 50, "f": 51, "i": 52, "h": 53, "m": 54,
-                  "l": 55, "o": 56, "n": 57, "s": 58, "r": 59, "u": 60,
-                  "t": 61, "y": 62}
-
-CHARCANSMILEN = 62
 
 CHARISOSMISET = {"#": 29, "%": 30, ")": 31, "(": 1, "+": 32, "-": 33, "/": 34, ".": 2,
                  "1": 35, "0": 3, "3": 36, "2": 4, "5": 37, "4": 5, "7": 38, "6": 6,
@@ -99,15 +76,9 @@ def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
 
     return X #.tolist()
 
-## ######################## ##
-#
-#  DATASET Class
-#
-## ######################## ## 
-# works for large dataset
 class DataSet(object):
     def __init__(self, dataset_path, dataset_name, seqlen, smilen, protein_format='sequence', drug_format='labeled_smiles',
-                 mol2vec_model_path=None, mol2vec_radius=1):
+                 mol2vec_model_path=None, mol2vec_radius=1, biovec_model_path=None):
         self.SEQLEN = seqlen
         self.SMILEN = smilen
         #self.NCLASSES = n_classes
@@ -123,15 +94,14 @@ class DataSet(object):
 
         self.mol2vec_model_path = mol2vec_model_path
         self.mol2vec_radius = mol2vec_radius
+        self.biovec_model_path = biovec_model_path
 
     def parse_data(self):
         fpath = self.fpath
 
-        print("Read %s start" % fpath)
-
         ligands = json.load(open(path.join(fpath, "ligands_can.txt")), object_pairs_hook=OrderedDict)
 
-        if self.protein_format == 'sequence':
+        if self.protein_format == 'sequence' or self.protein_format == 'biovec':
             proteins = json.load(open(path.join(fpath, "proteins.txt")), object_pairs_hook=OrderedDict)
         else:
             proteins = json.load(open(path.join(fpath, "proteins_hhmake.txt")), object_pairs_hook=OrderedDict)
@@ -186,12 +156,19 @@ class DataSet(object):
             iterator = range(proteins.shape[0])
 
         if self.protein_format == 'sequence':
-
             for t in iterator:
                 XT.append(label_sequence(proteins[t], self.SEQLEN, self.charseqset))
         elif self.protein_format == 'pssm':
             for t in iterator:
                 XT.append(get_PSSM(self.dataset_path, proteins[t], self.SEQLEN))
+        elif self.protein_format == 'biovec':
+            import biovec
+            pv = biovec.models.load_protvec(self.biovec_model_path)
+            for t in iterator:
+                cur_vec = pv.to_vecs(proteins[t])
+                cur_vec = np.concatenate((cur_vec[0], cur_vec[1], cur_vec[2]), axis=0)
+
+                XT.append(cur_vec)
         else:
             raise NotImplementedError()
 
@@ -274,7 +251,6 @@ def get_train_test_split_by_drugs(all_drugs, n_drugs_in_test=70, seed=42):
 def prepare_interaction_pairs(XD, XT,  Y, rows, cols):
     drugs = []
     targets = []
-    targetscls = []
     affinity=[]
 
     for pair_ind in range(len(rows)):
@@ -318,7 +294,8 @@ def load_data(FLAGS):
                        protein_format=FLAGS.protein_format,
                        drug_format=FLAGS.drug_format,
                        mol2vec_model_path=FLAGS.mol2vec_model_path,
-                       mol2vec_radius=FLAGS.mol2vec_radius
+                       mol2vec_radius=FLAGS.mol2vec_radius,
+                       biovec_model_path=FLAGS.biovec_model_path
                        )
 
     XD_davis, XT_davis, Y_davis = dataset.parse_data()
@@ -330,7 +307,8 @@ def load_data(FLAGS):
                         protein_format=FLAGS.protein_format,
                         drug_format=FLAGS.drug_format,
                         mol2vec_model_path=FLAGS.mol2vec_model_path,
-                        mol2vec_radius=FLAGS.mol2vec_radius
+                        mol2vec_radius=FLAGS.mol2vec_radius,
+                        biovec_model_path=FLAGS.biovec_model_path
                            )
 
     XD_dtc, XT_dtc, Y_dtc = dtc_dataset.parse_data()
