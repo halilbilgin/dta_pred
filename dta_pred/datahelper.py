@@ -99,7 +99,7 @@ class DataSet(object):
     def parse_data(self):
         fpath = self.fpath
 
-        ligands = json.load(open(path.join(fpath, "ligands_can.txt")), object_pairs_hook=OrderedDict)
+        ligands = json.load(open(path.join(fpath, "ligands_iso.txt")), object_pairs_hook=OrderedDict)
 
         if self.protein_format == 'sequence' or self.protein_format == 'biovec':
             proteins = json.load(open(path.join(fpath, "proteins.txt")), object_pairs_hook=OrderedDict)
@@ -132,6 +132,7 @@ class DataSet(object):
 
             for d in iterator:
                 XD.append(label_smiles(ligands[d], self.SMILEN, self.charsmiset))
+
         elif self.drug_format == 'mol2vec':
             from rdkit.Chem import PandasTools
             from mol2vec.features import mol2alt_sentence, MolSentence, sentences2vec
@@ -180,9 +181,11 @@ class DTCDataset(DataSet):
         dtc_train.drop('Unnamed: 0', axis=1, inplace=True)
 
         if with_label:
+
             dtc_train = dtc_train.groupby(['inchi_key', 'uniprot_id']).aggregate({'value': np.median, 'smiles': 'first',
                                                                                   'fasta': 'first',
                                                                                   'hhmake': 'first'}).reset_index()
+
 
         for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
             dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
@@ -227,7 +230,6 @@ def get_PSSM(dataset_path, data_file, max_seq_len):
 def get_train_test_split_by_drugs(all_drugs, n_drugs_in_test=70, seed=42):
     if len(all_drugs.shape) == 1:
         all_drugs = np.reshape(all_drugs, (-1, 1))
-
     unique_drugs = np.unique(all_drugs, axis=0)
 
     assert n_drugs_in_test <= unique_drugs.shape[0]

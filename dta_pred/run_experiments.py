@@ -5,10 +5,12 @@ from argparse import Namespace
 
 from .datahelper import *
 from keras.models import load_model
+
 import os
 from .emetrics import *
 from .utils import over_sampling, under_sampling, makedirs
-from dta_pred.models.dnn_model import dnn_model
+from dta_pred.models.dnn_model import dnn_model, fully_connected_model, \
+    simple_cnn_encoder, inception_encoder, get_pooling
 from .arguments import logging
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
@@ -66,12 +68,33 @@ def train_model(FLAGS):
 
         K.clear_session()
 
-        gridmodel = dnn_model(FLAGS)
+        interaction_model = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc,
+                                                  FLAGS.dropout, FLAGS.apply_bn)
+        smi_model = None
+        if FLAGS.smi_model == 'inception':
+            smi_model = inception_encoder(FLAGS.num_windows, FLAGS.smi_window_length)
+        elif FLAGS.smi_model == 'simple_cnn':
+            smi_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
+                                           FLAGS.smi_window_length)
+
+        seq_model = None
+        if FLAGS.seq_model == 'inception':
+            seq_model = inception_encoder(FLAGS.num_windows, FLAGS.seq_window_length)
+        elif FLAGS.seq_model == 'simple_cnn':
+            seq_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
+                                           FLAGS.seq_window_length)
+
+        gridmodel = dnn_model(FLAGS.drug_format, FLAGS.protein_format, FLAGS.max_smi_len,
+                              FLAGS.max_seq_len, interaction_model=interaction_model,
+                              loss_fn=FLAGS.loss, smi_model=smi_model, seq_model=seq_model,
+                              smi_pooling=get_pooling(FLAGS.pooling_type),
+                              seq_pooling=get_pooling(FLAGS.pooling_type))
 
         gridres = gridmodel.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
                       epochs=FLAGS.num_epoch,
                       validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
                       , callbacks=[early_stopping_callback, checkpoint_callback], verbose=2)
+
         K.clear_session()
         del gridmodel
 
@@ -104,6 +127,9 @@ def run_experiment(_run, FLAGS):
 
     for metric, val in results.items():
         if metric[:4] == 'test':
+            if type(val) == np.ndarray:
+                val = val[0]
+
             _run.log_scalar(metric, val)
             logging(metric + '=' + str(val), FLAGS)
 

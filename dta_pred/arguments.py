@@ -10,6 +10,18 @@ def argparser():
         help='Name of the experiment.'
     )
     parser.add_argument(
+        '--smi_model',
+        type=str,
+        help='Model for encoding SMILES. i.e, simple_cnn, inception'
+    )
+
+    parser.add_argument(
+        '--seq_model',
+        type=str,
+        help="Model for encoding Sequences. i.e, simple_cnn, inception"
+    )
+
+    parser.add_argument(
         '--smi_window_length',
         type=int,
         help='smiles filter length'
@@ -55,7 +67,7 @@ def argparser():
         '--n_fc_layers',
         type=int,
         default=1,
-        help='Number of Fully Connected layers'
+        help='Number of Fully Connected layers in interaction modeling stage'
     )
 
     parser.add_argument(
