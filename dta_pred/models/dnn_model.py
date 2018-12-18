@@ -10,40 +10,49 @@ keras.metrics.f1 = f1
 
 from dta_pred import CHARISOSMILEN, CHARPROTLEN
 
-def simple_cnn_encoder(n_cnn_layers, num_windows, kernel_size):
+def simple_cnn_encoder(n_cnn_layers, num_windows, kernel_size, name):
 
     def simple_cnn_encoder_base(inputs):
         encode_mols = inputs
 
         for i in range(n_cnn_layers):
             encode_mols = Conv1D(filters=num_windows, kernel_size=kernel_size,
-                                 activation='relu', padding='valid', strides=1)(encode_mols)
+                                 activation='relu', padding='valid', strides=1,
+                                 name=name+'_'+str(i+1))(encode_mols)
 
         return encode_mols
 
     return simple_cnn_encoder_base
 
-def inception_encoder(num_windows, kernel_size):
+def inception_encoder(num_windows, kernel_size, name):
     def inception_base(inputs):
-        tower_one = MaxPooling1D(num_windows, strides=1, padding='same')(inputs)
-        tower_one = Conv1D(num_windows, kernel_size, activation='relu', border_mode='same')(tower_one)
+        name_prefix = name+'_'
 
-        tower_two = Conv1D(num_windows, kernel_size, activation='relu', border_mode='same')(inputs)
-        tower_two = Conv1D(num_windows, kernel_size*2, activation='relu', border_mode='same')(tower_two)
+        tower_one = MaxPooling1D(num_windows, strides=1, padding='same',
+                                 name=name_prefix+'_1')(inputs)
+        tower_one = Conv1D(num_windows, kernel_size, activation='relu', padding='same',
+                                 name=name_prefix+'_2')(tower_one)
 
-        tower_three = Conv1D(num_windows, kernel_size, activation='relu', border_mode='same')(inputs)
-        tower_three = Conv1D(num_windows, kernel_size*4, activation='relu', border_mode='same')(tower_three)
+        tower_two = Conv1D(num_windows, kernel_size*2, activation='relu', padding='same',
+                                 name=name_prefix+'_3')(inputs)
+        tower_two = Conv1D(num_windows, kernel_size*3, activation='relu', padding='same',
+                                 name=name_prefix+'_4')(tower_two)
 
-        x = concatenate([tower_one, tower_two, tower_three], axis=-1)
+        tower_three = Conv1D(num_windows, kernel_size*2, activation='relu',
+                             padding='same', name=name_prefix+'_5')(inputs)
+        tower_three = Conv1D(num_windows, kernel_size*4, activation='relu',
+                             padding='same', name=name_prefix+'_6')(tower_three)
+
+        x = concatenate([tower_one, tower_two, tower_three], axis=2)
 
         return x
 
     return inception_base
 
-def fully_connected_model(n_fc_layers, n_neurons, dropout, apply_bn=False):
+def fully_connected_model(n_fc_layers, n_neurons, dropout, name='fc', apply_bn=False):
     def fully_connected_model_base(encode_interaction):
         for i in range(n_fc_layers):
-            FC = Dense(n_neurons, activation='relu')(encode_interaction)
+            FC = Dense(n_neurons, activation='relu', name=name+'_'+str(i))(encode_interaction)
 
             FC = Dropout(dropout)(FC)
             if apply_bn:
@@ -54,14 +63,13 @@ def fully_connected_model(n_fc_layers, n_neurons, dropout, apply_bn=False):
     return fully_connected_model_base
 
 def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
-              interaction_model=None, loss_fn='mean_squared_error',
-              smi_model=None, seq_model=None, smi_pooling=GlobalMaxPooling1D(),
+              interaction_model=None, loss_fn='mean_squared_error', smi_model=None, seq_model=None,
+              seq_embedding=None, smi_embedding=None, smi_pooling=GlobalMaxPooling1D(),
               seq_pooling=GlobalMaxPooling1D()):
 
     if drug_format == 'labeled_smiles':
         XDinput = Input(shape=(smi_input_dim,), dtype='int32')
-        encode_smiles = Embedding(input_dim=CHARISOSMILEN + 1, output_dim=128,
-                                  input_length=smi_input_dim)(XDinput)
+        encode_smiles = smi_embedding(XDinput)
     elif drug_format == 'mol2vec':
         XDinput = Input(shape=(smi_input_dim, ), )
         encode_smiles = XDinput
@@ -74,8 +82,7 @@ def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
 
     if protein_format == 'sequence':
         XTinput = Input(shape=(seq_input_dim,), dtype='int32')
-        encode_protein = Embedding(input_dim=CHARPROTLEN + 1, output_dim=128,
-                                   input_length=seq_input_dim)(XTinput)
+        encode_protein = seq_embedding(XTinput)
     elif protein_format == 'pssm':
         XTinput = Input(shape=(seq_input_dim, 20), dtype='float32')
         encode_protein = XTinput
@@ -89,7 +96,7 @@ def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
         encode_protein = seq_model(encode_protein)
         encode_protein = seq_pooling(encode_protein)
 
-    encode_interaction = concatenate([encode_smiles, encode_protein], axis=-1)
+    encode_interaction = concatenate([encode_smiles, encode_protein], name='encode_interaction', axis=-1)
 
     # Fully connected
     FC = encode_interaction
@@ -104,6 +111,18 @@ def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
     interactionModel.compile(optimizer='adam', loss=loss_fn, metrics=[cindex, f1])
 
     return interactionModel
+
+def multi_task_model(**kwargs):
+
+    #KIBA
+    model_1 = dnn_model(**kwargs)
+
+    #DAVIS
+    model_2 = dnn_model(**kwargs)
+
+    return model_1, model_2
+
+
 
 def crossentropy_mse_combined(y_true, y_pred):
     loss = keras.losses.mean_squared_error(y_true, y_pred)

@@ -4,23 +4,29 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping
 from argparse import Namespace
 
 from .datahelper import *
-from keras.models import load_model
-
-import os
-from .emetrics import *
-from .utils import over_sampling, under_sampling, makedirs
+from keras.models import load_model, Model
+from keras.layers import Embedding, Dense
 from dta_pred.models.dnn_model import dnn_model, fully_connected_model, \
     simple_cnn_encoder, inception_encoder, get_pooling
+from .emetrics import *
+from .utils import over_sampling, under_sampling, makedirs
 from .arguments import logging
+import os
+
+
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
 
 def get_dataset(FLAGS):
     all_train_drugs, all_train_prots, all_train_Y = load_data(FLAGS)
 
-    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, 70, seed=FLAGS.seed)
+    train_drugs, val_drugs = 70, 70
+    if 'kiba' in FLAGS.datasets_included:
+        train_drugs, val_drugs = 10, 300
 
-    new_tr_fold, val_fold = get_train_test_split_by_drugs(all_train_drugs[tr_fold], 70, seed=FLAGS.seed)
+    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, train_drugs, seed=FLAGS.seed)
+
+    new_tr_fold, val_fold = get_train_test_split_by_drugs(all_train_drugs[tr_fold], val_drugs, seed=FLAGS.seed)
     val_fold = tr_fold[val_fold]
     new_tr_fold = tr_fold[new_tr_fold]
     print("Train: "+str(len(new_tr_fold))+" validation: "+str(len(val_fold))+\
@@ -45,7 +51,65 @@ def get_dataset(FLAGS):
 
     return XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test
 
-def train_model(FLAGS):
+def build_model(FLAGS):
+    interaction_model = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc,
+                                              FLAGS.dropout, 'fc', FLAGS.apply_bn)
+    smi_model = None
+    smi_embedding = Embedding(input_dim=CHARISOSMILEN + 1, output_dim=128,
+                              input_length=FLAGS.max_smi_len, name='smi_embedding')
+    if FLAGS.smi_model == 'inception':
+        smi_model = inception_encoder(FLAGS.num_windows, FLAGS.smi_window_length, 'smi_enc')
+    elif FLAGS.smi_model == 'simple_cnn':
+        smi_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
+                                       FLAGS.smi_window_length, 'smi_enc')
+    else:
+        smi_embedding = None
+
+    seq_model = None
+    seq_embedding = Embedding(input_dim=CHARPROTLEN + 1, output_dim=128,
+                              input_length=FLAGS.max_seq_len, name='seq_embedding')
+    if FLAGS.seq_model == 'inception':
+        seq_model = inception_encoder(FLAGS.num_windows, FLAGS.seq_window_length, 'seq_enc')
+    elif FLAGS.seq_model == 'simple_cnn':
+        seq_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
+                                       FLAGS.seq_window_length, 'seq_enc')
+    else:
+        seq_embedding = None
+
+    gridmodel = dnn_model(FLAGS.drug_format, FLAGS.protein_format, FLAGS.max_smi_len,
+                          FLAGS.max_seq_len, interaction_model=interaction_model,
+                          loss_fn=FLAGS.loss, smi_model=smi_model, seq_model=seq_model, smi_embedding=smi_embedding,
+                          seq_embedding=seq_embedding, smi_pooling=get_pooling(FLAGS.pooling_type),
+                          seq_pooling=get_pooling(FLAGS.pooling_type))
+    return gridmodel
+
+def train_multitask_model(FLAGS):
+
+    multitask_flags = Namespace(**vars(FLAGS))
+    multitask_flags.loss = 'mean_squared_error'
+    multitask_flags.datasets_included=['kiba']
+    multitask_flags.checkpoints_path = os.path.join(multitask_flags.checkpoints_path, 'kiba')
+    makedirs(os.path.join(multitask_flags.checkpoints_path, 'kiba'))
+
+    result = train_model(multitask_flags)
+
+    def new_model_base():
+        model_kiba = load_model(result['checkpoint_file'])
+
+        encode_interaction = model_kiba.get_layer('encode_interaction').output
+
+        FC = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons, FLAGS.dropout, 'kd_fc',
+                                   FLAGS.apply_bn)(encode_interaction)
+
+        predictions = Dense(1, kernel_initializer='normal')(FC)
+
+        interactionModel = Model(inputs=model_kiba.inputs, outputs=[predictions])
+
+        interactionModel.compile(optimizer='adam', loss=FLAGS.loss, metrics=[cindex, f1])
+
+    return train_model(FLAGS, new_model_base)
+
+def train_model(FLAGS, model_fn=None):
 
     XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
             Y_train, Y_val, Y_test = get_dataset(FLAGS)
@@ -68,27 +132,10 @@ def train_model(FLAGS):
 
         K.clear_session()
 
-        interaction_model = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc,
-                                                  FLAGS.dropout, FLAGS.apply_bn)
-        smi_model = None
-        if FLAGS.smi_model == 'inception':
-            smi_model = inception_encoder(FLAGS.num_windows, FLAGS.smi_window_length)
-        elif FLAGS.smi_model == 'simple_cnn':
-            smi_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
-                                           FLAGS.smi_window_length)
-
-        seq_model = None
-        if FLAGS.seq_model == 'inception':
-            seq_model = inception_encoder(FLAGS.num_windows, FLAGS.seq_window_length)
-        elif FLAGS.seq_model == 'simple_cnn':
-            seq_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
-                                           FLAGS.seq_window_length)
-
-        gridmodel = dnn_model(FLAGS.drug_format, FLAGS.protein_format, FLAGS.max_smi_len,
-                              FLAGS.max_seq_len, interaction_model=interaction_model,
-                              loss_fn=FLAGS.loss, smi_model=smi_model, seq_model=seq_model,
-                              smi_pooling=get_pooling(FLAGS.pooling_type),
-                              seq_pooling=get_pooling(FLAGS.pooling_type))
+        if model_fn is None:
+            gridmodel = build_model(FLAGS)
+        else:
+            gridmodel = model_fn()
 
         gridres = gridmodel.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
                       epochs=FLAGS.num_epoch,
@@ -121,7 +168,10 @@ def train_model(FLAGS):
 def run_experiment(_run, FLAGS):
     FLAGS = Namespace(**vars(FLAGS))
 
-    results = train_model(FLAGS)
+    if FLAGS.multitask_enabled == 1:
+        results = train_multitask_model(FLAGS)
+    else:
+        results = train_model(FLAGS)
 
     logging('---BEST RUN test results---', FLAGS)
 

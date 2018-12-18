@@ -136,6 +136,13 @@ def argparser():
         help='Directory for input data.'
     )
     parser.add_argument(
+        '--datasets_included',
+        type=str,
+        nargs='+',
+        default=['davis', 'dtc'],
+        help='Directory for input data.'
+    )
+    parser.add_argument(
         '--output_path',
         type=str,
         default='output/',
@@ -146,6 +153,12 @@ def argparser():
         type=str,
         default=None,
         help='MongoDB configuration'
+    )
+    parser.add_argument(
+        '--multitask_enabled',
+        type=int,
+        default=0,
+        help='Enable multitask (First train with KIBA then use the CNN layers)'
     )
     parser.add_argument(
         '--seed',

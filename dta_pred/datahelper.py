@@ -289,8 +289,14 @@ def get_n_fold_by_drugs(all_drugs, n_splits=5):
     return PredefinedSplit(test_folds)
 
 def load_data(FLAGS):
-    dataset = DataSet( dataset_path = FLAGS.dataset_path,
-                       dataset_name='davis',
+    all_train_drugs, all_train_prots, all_train_Y = None, None, None
+    for dataset_name in FLAGS.datasets_included:
+        cls = DataSet
+        if dataset_name == 'dtc':
+            cls = DTCDataset
+
+        dataset = cls( dataset_path = FLAGS.dataset_path,
+                       dataset_name=dataset_name,
                        seqlen = FLAGS.max_seq_len,
                        smilen = FLAGS.max_smi_len,
                        protein_format=FLAGS.protein_format,
@@ -299,27 +305,17 @@ def load_data(FLAGS):
                        mol2vec_radius=FLAGS.mol2vec_radius,
                        biovec_model_path=FLAGS.biovec_model_path
                        )
+        XD, XT, Y = dataset.parse_data()
 
-    XD_davis, XT_davis, Y_davis = dataset.parse_data()
+        if type(all_train_drugs) is not np.ndarray:
+            all_train_drugs, all_train_prots, all_train_Y = np.asarray(XD), np.asarray(XT), np.asarray(Y)
+        else:
+            all_train_drugs = np.concatenate((np.asarray(all_train_drugs), np.asarray(XD)), axis=0)
+            all_train_prots = np.concatenate((np.asarray(all_train_prots), np.asarray(XT)), axis=0)
+            all_train_Y = np.concatenate((np.asarray(all_train_Y), np.asarray(Y)), axis=0)
 
-    dtc_dataset = DTCDataset(dataset_path=FLAGS.dataset_path,
-                        dataset_name='dtc',
-                        seqlen=FLAGS.max_seq_len,
-                        smilen=FLAGS.max_smi_len,
-                        protein_format=FLAGS.protein_format,
-                        drug_format=FLAGS.drug_format,
-                        mol2vec_model_path=FLAGS.mol2vec_model_path,
-                        mol2vec_radius=FLAGS.mol2vec_radius,
-                        biovec_model_path=FLAGS.biovec_model_path
-                           )
-
-    XD_dtc, XT_dtc, Y_dtc = dtc_dataset.parse_data()
-
-    all_train_drugs = np.concatenate((np.asarray(XD_davis), np.asarray(XD_dtc)), axis=0)
-
-    all_train_prots = np.concatenate((np.asarray(XT_davis), np.asarray(XT_dtc)), axis=0)
-    all_train_Y = np.concatenate((np.asarray(Y_davis), np.asarray(Y_dtc)), axis=0)
-    all_train_Y = -np.log10(all_train_Y/1e9)
+    if 'kiba' not in FLAGS.datasets_included:
+        all_train_Y = -np.log10(all_train_Y/1e9)
 
     shuffled_inds = np.asarray([i for i in range(all_train_Y.shape[0])])
 
