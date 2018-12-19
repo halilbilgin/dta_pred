@@ -51,9 +51,11 @@ def get_dataset(FLAGS):
 
     return XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test
 
-def build_model(FLAGS):
-    interaction_model = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc,
+def build_model(FLAGS, interaction_model=None):
+    if interaction_model == None:
+        interaction_model = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc,
                                               FLAGS.dropout, 'fc', FLAGS.apply_bn)
+
     smi_model = None
     smi_embedding = Embedding(input_dim=CHARISOSMILEN + 1, output_dim=128,
                               input_length=FLAGS.max_smi_len, name='smi_embedding')
@@ -91,14 +93,14 @@ def train_multitask_model(FLAGS):
     multitask_flags.checkpoints_path = os.path.join(multitask_flags.checkpoints_path, 'kiba')
     makedirs(os.path.join(multitask_flags.checkpoints_path, 'kiba'))
 
-    result = train_model(multitask_flags)
+    result = train_model(multitask_flags, 2)
 
     def new_model_base():
         model_kiba = load_model(result['checkpoint_file'])
 
         encode_interaction = model_kiba.get_layer('encode_interaction').output
 
-        FC = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons, FLAGS.dropout, 'kd_fc',
+        FC = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc, FLAGS.dropout, 'kd_fc',
                                    FLAGS.apply_bn)(encode_interaction)
 
         predictions = Dense(1, kernel_initializer='normal')(FC)
@@ -107,24 +109,81 @@ def train_multitask_model(FLAGS):
 
         interactionModel.compile(optimizer='adam', loss=FLAGS.loss, metrics=[cindex, f1])
 
-    return train_model(FLAGS, new_model_base)
+        return interactionModel
 
-def train_model(FLAGS, model_fn=None):
+    return train_model(FLAGS, 3, new_model_base)
+
+def train_multitask_model_v2(FLAGS):
+    XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
+            Y_train, Y_val, Y_test = get_dataset(FLAGS)
+
+    multitask_flags = Namespace(**vars(FLAGS))
+    multitask_flags.loss = 'mean_squared_error'
+    multitask_flags.datasets_included=['kiba']
+    multitask_flags.checkpoints_path = os.path.join(multitask_flags.checkpoints_path, 'kiba')
+    makedirs(os.path.join(multitask_flags.checkpoints_path, 'kiba'))
+
+    XD_train_kiba, XD_val_kiba, XD_test_kiba, XT_train_kiba, XT_val_kiba, XT_test_kiba, \
+            Y_train_kiba, Y_val_kiba, Y_test_kiba = get_dataset(multitask_flags)
+
+    FC_kiba = fully_connected_model(FLAGS.n_fc_layers*2, FLAGS.n_neurons_fc,
+                                      FLAGS.dropout, 'shared_fc', FLAGS.apply_bn)
+
+    model_kiba = build_model(multitask_flags, FC_kiba)
+    model_kiba.summary()
+    encode_interaction = model_kiba.get_layer('shared_fc_'+str(FLAGS.n_fc_layers-1)).output
+
+    FC = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc, FLAGS.dropout, 'kd_fc',
+                               FLAGS.apply_bn)(encode_interaction)
+
+    predictions = Dense(1, kernel_initializer='normal')(FC)
+
+    model_kd = Model(inputs=model_kiba.inputs, outputs=[predictions])
+    model_kd.compile(optimizer='adam', loss=FLAGS.loss, metrics=[cindex, f1])
+
+    param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
+    checkpoint_dir = os.path.join(FLAGS.checkpoints_path)
+    makedirs(checkpoint_dir)
+    checkpoint_file = os.path.join(checkpoint_dir, 'davis_dtc_dta_' + param_name + '.h5')
+
+    checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
+                                          save_best_only=True)
+    for i in range(FLAGS.num_epoch):
+        gridres = model_kd.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
+                                epochs=1,
+                                validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
+                                , callbacks=[checkpoint_callback], verbose=2)
+        model_kiba.fit(([XD_train_kiba, XT_train_kiba]), Y_train_kiba, batch_size=FLAGS.batch_size,
+                     epochs=1,
+                     validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
+                     , callbacks=[checkpoint_callback], verbose=2)
+
+    gridmodel = load_model(checkpoint_file)
+
+    predicted_labels = gridmodel.predict([np.array(XD_test), np.array(XT_test)])
+
+    return {
+            'test_loss': mean_squared_error(Y_test, predicted_labels),
+            'test_cindex': get_cindex(Y_test, predicted_labels),
+            'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
+            'test_f1': f1_score(Y_test > FLAGS.binary_th, predicted_labels > FLAGS.binary_th),
+            'train_val_hist': gridres.history,
+            'checkpoint_file': checkpoint_file
+        }
+
+def train_model(FLAGS, n_repeats=3, model_fn=None):
 
     XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
             Y_train, Y_val, Y_test = get_dataset(FLAGS)
 
     param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
-
     checkpoint_dir = os.path.join(FLAGS.checkpoints_path)
-
     makedirs(checkpoint_dir)
-
     early_stopping_callback = EarlyStopping(monitor='val_loss', patience=25)
     results = []
     best_rmse_ind = 0
 
-    for repeat_id in range(3):
+    for repeat_id in range(n_repeats):
         checkpoint_file = os.path.join(checkpoint_dir, 'davis_dtc_dta_' + param_name + 'repeat' + str(repeat_id) + '.h5')
 
         checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
@@ -139,7 +198,7 @@ def train_model(FLAGS, model_fn=None):
 
         gridres = gridmodel.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
                       epochs=FLAGS.num_epoch,
-                      validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
+                  validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
                       , callbacks=[early_stopping_callback, checkpoint_callback], verbose=2)
 
         K.clear_session()
@@ -162,14 +221,16 @@ def train_model(FLAGS, model_fn=None):
         if results[best_rmse_ind]['test_rmse'] > results[repeat_id]['test_rmse']:
             best_rmse_ind = repeat_id
 
-    return results[best_rmse_ind]
+        return results[best_rmse_ind]
 
 
 def run_experiment(_run, FLAGS):
     FLAGS = Namespace(**vars(FLAGS))
 
-    if FLAGS.multitask_enabled == 1:
+    if FLAGS.model_name == 'multitask_model':
         results = train_multitask_model(FLAGS)
+    elif FLAGS.model_name == 'multitask_model_v2':
+        results = train_multitask_model_v2(FLAGS)
     else:
         results = train_model(FLAGS)
 

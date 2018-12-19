@@ -155,10 +155,10 @@ def argparser():
         help='MongoDB configuration'
     )
     parser.add_argument(
-        '--multitask_enabled',
-        type=int,
-        default=0,
-        help='Enable multitask (First train with KIBA then use the CNN layers)'
+        '--model_name',
+        type=str,
+        default='',
+        help='Model name, multitask_model, multitask_model_v2, or default model'
     )
     parser.add_argument(
         '--seed',

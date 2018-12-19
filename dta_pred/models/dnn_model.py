@@ -51,9 +51,9 @@ def inception_encoder(num_windows, kernel_size, name):
 
 def fully_connected_model(n_fc_layers, n_neurons, dropout, name='fc', apply_bn=False):
     def fully_connected_model_base(encode_interaction):
+        FC = encode_interaction
         for i in range(n_fc_layers):
-            FC = Dense(n_neurons, activation='relu', name=name+'_'+str(i))(encode_interaction)
-
+            FC = Dense(n_neurons, activation='relu', name=name+'_'+str(i))(FC)
             FC = Dropout(dropout)(FC)
             if apply_bn:
                 FC = BatchNormalization()(FC)
@@ -62,11 +62,10 @@ def fully_connected_model(n_fc_layers, n_neurons, dropout, name='fc', apply_bn=F
 
     return fully_connected_model_base
 
-def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
-              interaction_model=None, loss_fn='mean_squared_error', smi_model=None, seq_model=None,
+def get_cnn_output(drug_format, protein_format, smi_input_dim, seq_input_dim,
+              smi_model=None, seq_model=None,
               seq_embedding=None, smi_embedding=None, smi_pooling=GlobalMaxPooling1D(),
               seq_pooling=GlobalMaxPooling1D()):
-
     if drug_format == 'labeled_smiles':
         XDinput = Input(shape=(smi_input_dim,), dtype='int32')
         encode_smiles = smi_embedding(XDinput)
@@ -98,6 +97,16 @@ def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
 
     encode_interaction = concatenate([encode_smiles, encode_protein], name='encode_interaction', axis=-1)
 
+    return [XDinput, XTinput], encode_interaction
+
+def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
+              interaction_model=None, loss_fn='mean_squared_error', smi_model=None, seq_model=None,
+              seq_embedding=None, smi_embedding=None, smi_pooling=GlobalMaxPooling1D(),
+              seq_pooling=GlobalMaxPooling1D()):
+
+    inputs, encode_interaction = get_cnn_output(drug_format, protein_format, smi_input_dim, seq_input_dim,
+                                        smi_model, seq_model, seq_embedding, smi_embedding, smi_pooling, seq_pooling)
+
     # Fully connected
     FC = encode_interaction
     if interaction_model is not None:
@@ -106,23 +115,11 @@ def dnn_model(drug_format, protein_format, smi_input_dim, seq_input_dim,
     # And add a logistic regression on top
     predictions = Dense(1, kernel_initializer='normal')(FC)
 
-    interactionModel = Model(inputs=[XDinput, XTinput], outputs=[predictions])
+    interactionModel = Model(inputs=inputs, outputs=[predictions])
 
     interactionModel.compile(optimizer='adam', loss=loss_fn, metrics=[cindex, f1])
 
     return interactionModel
-
-def multi_task_model(**kwargs):
-
-    #KIBA
-    model_1 = dnn_model(**kwargs)
-
-    #DAVIS
-    model_2 = dnn_model(**kwargs)
-
-    return model_1, model_2
-
-
 
 def crossentropy_mse_combined(y_true, y_pred):
     loss = keras.losses.mean_squared_error(y_true, y_pred)
