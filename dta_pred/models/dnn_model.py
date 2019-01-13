@@ -3,7 +3,7 @@ from keras.layers.normalization import BatchNormalization
 from keras.layers import concatenate
 from keras.models import Model
 import tensorflow as tf
-from dta_pred.emetrics import cindex, f1
+from dta_pred.metrics import cindex, f1
 import keras.metrics
 keras.metrics.cindex = cindex
 keras.metrics.f1 = f1

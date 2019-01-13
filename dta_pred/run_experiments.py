@@ -3,13 +3,13 @@ import binascii
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from argparse import Namespace
 
-from .datahelper import *
+from .data_helper import *
 from keras.models import load_model, Model
 from keras.layers import Embedding, Dense
 from dta_pred.models.dnn_model import auto_model, fully_connected_model, \
     simple_cnn_encoder, inception_encoder, get_pooling
-from .emetrics import *
-from .utils import over_sampling, under_sampling, makedirs
+from .metrics import *
+from .utils import *
 from .protein_encoding import auto_protein_encoding
 from .drug_encoding import auto_drug_encoding
 

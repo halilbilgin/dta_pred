@@ -1,5 +1,5 @@
 from keras.layers import Input, Embedding
-from dta_pred.datahelper import CHARPROTLEN
+from dta_pred.data_helper import CHARPROTLEN
 
 def biovec_encoding(seq_input_dim, **kwargs):
     XTinput = Input(shape=(seq_input_dim,), )

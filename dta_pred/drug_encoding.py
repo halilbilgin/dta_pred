@@ -1,5 +1,5 @@
 from keras.layers import Input, Embedding
-from dta_pred.datahelper import CHARISOSMILEN
+from dta_pred.data_helper import CHARISOSMILEN
 
 def smiles_encoding(smi_input_dim, max_smi_len, **kwargs):
     XDinput = Input(shape=(smi_input_dim,), dtype='int32')
