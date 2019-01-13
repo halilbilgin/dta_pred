@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from os import path
 import sys
-from sklearn.model_selection import KFold, PredefinedSplit
+from sklearn.model_selection import KFold, PredefinedSplit, train_test_split
 #from keras.preprocessing.sequence import pad_sequences
 
 
@@ -62,14 +62,24 @@ def one_hot_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
     return X
 
 def label_smiles(line, MAX_SMI_LEN, smi_ch_ind):
-    X = np.zeros(MAX_SMI_LEN)
+    if(MAX_SMI_LEN == None):
+        X = np.zeros(len(line))
+    else:
+        X = np.zeros(MAX_SMI_LEN)
+
     for i, ch in enumerate(line[:MAX_SMI_LEN]): #	x, smi_ch_ind, y
-        X[i] = smi_ch_ind[ch]
+        if ch not in smi_ch_ind:
+            print('Not found', ch, 'at the index:', i, 'total:', len(line))
+        else:
+            X[i] = smi_ch_ind[ch]
 
     return X
 
 def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
-    X = np.zeros(MAX_SEQ_LEN)
+    if MAX_SEQ_LEN == None:
+        X = np.zeros(len(line))
+    else:
+        X = np.zeros(MAX_SEQ_LEN)
 
     for i, ch in enumerate(line[:MAX_SEQ_LEN]):
         X[i] = smi_ch_ind[ch]
@@ -95,8 +105,21 @@ class DataSet(object):
         self.mol2vec_model_path = mol2vec_model_path
         self.mol2vec_radius = mol2vec_radius
         self.biovec_model_path = biovec_model_path
+        with open(path.join(self.fpath, 'type.txt'), 'r') as f:
+            self.interaction_type = f.read()
 
-    def parse_data(self):
+        if path.exists(path.join(self.fpath, 'proteins.txt')):
+            self.dataset_type = 'txt'
+        else:
+            self.dataset_type = 'csv'
+
+    def parse_data(self, with_label=True):
+        if self.dataset_type == 'txt':
+            return self.parse_txt()
+        else:
+            return self.parse_csv(with_label=with_label)
+
+    def parse_txt(self):
         fpath = self.fpath
 
         ligands = json.load(open(path.join(fpath, "ligands_iso.txt")), object_pairs_hook=OrderedDict)
@@ -107,9 +130,9 @@ class DataSet(object):
             proteins = json.load(open(path.join(fpath, "proteins_hhmake.txt")), object_pairs_hook=OrderedDict)
 
         if sys.version_info > (3, 0):
-            Y = pickle.load(open(path.join(fpath, "Y"),"rb"), encoding='latin1')
+            Y = pickle.load(open(path.join(fpath, "Y"), "rb"), encoding='latin1')
         else:
-            Y = pickle.load(open(path.join(fpath, "Y"),"rb"))
+            Y = pickle.load(open(path.join(fpath, "Y"), "rb"))
 
         XT = self.process_proteins(proteins)
 
@@ -120,6 +143,42 @@ class DataSet(object):
         label_row_inds, label_col_inds = np.where(np.isnan(Y) == False)
 
         return prepare_interaction_pairs(XD, XT, Y, label_row_inds, label_col_inds)
+
+    def parse_csv(self, with_label):
+        if with_label:
+            dtc_train = pd.read_csv(path.join(self.fpath, 'train_hhmake.csv'))
+        else:
+            dtc_train = pd.read_csv(self.fpath)
+
+        for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
+            dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
+
+        n_samples = dtc_train['smiles'].shape[0]
+
+        XD, XT = [1 for i in range(n_samples)], [1 for i in range(n_samples)]
+
+        XD_processed = self.process_ligands(dtc_train['smiles'].unique())
+
+        for i, smiles in enumerate(dtc_train['smiles'].unique()):
+            indices = np.where(dtc_train['smiles'] == smiles)[0]
+
+            for ind in indices:
+                XD[ind] = XD_processed[i]
+
+        XT_processed = self.process_proteins(dtc_train['hhmake' if self.protein_format =='pssm' else 'fasta'].unique())
+
+        for i, fasta_seq in enumerate(dtc_train['fasta'].unique()):
+            indices = np.where(dtc_train['fasta'] == fasta_seq)[0]
+
+            for ind in indices:
+                XT[ind] = XT_processed[i]
+
+        assert len(XD) == len(XT) and len(XT) == dtc_train['smiles'].shape[0]
+
+        if with_label:
+            return XD, XT, dtc_train['value'].values
+        else:
+            return XD, XT
 
     def process_ligands(self, ligands):
         XD = []
@@ -175,48 +234,6 @@ class DataSet(object):
 
         return XT
 
-class DTCDataset(DataSet):
-    def parse_data(self, with_label=True):
-        dtc_train = pd.read_csv(path.join(self.fpath, 'train_hhmake.csv'))
-        dtc_train.drop('Unnamed: 0', axis=1, inplace=True)
-
-        if with_label:
-
-            dtc_train = dtc_train.groupby(['inchi_key', 'uniprot_id']).aggregate({'value': np.median, 'smiles': 'first',
-                                                                                  'fasta': 'first',
-                                                                                  'hhmake': 'first'}).reset_index()
-
-
-        for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
-            dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
-
-        n_samples = dtc_train['smiles'].shape[0]
-
-        XD, XT = [1 for i in range(n_samples)], [1 for i in range(n_samples)]
-
-        XD_processed = self.process_ligands(dtc_train['smiles'].unique())
-
-        for i, smiles in enumerate(dtc_train['smiles'].unique()):
-            indices = np.where(dtc_train['smiles'] == smiles)[0]
-
-            for ind in indices:
-                XD[ind] = XD_processed[i]
-
-        XT_processed = self.process_proteins(dtc_train['hhmake' if self.protein_format =='pssm' else 'fasta'].unique())
-
-        for i, fasta_seq in enumerate(dtc_train['fasta'].unique()):
-            indices = np.where(dtc_train['fasta'] == fasta_seq)[0]
-
-            for ind in indices:
-                XT[ind] = XT_processed[i]
-
-        assert len(XD) == len(XT) and len(XT) == dtc_train['smiles'].shape[0]
-
-        if with_label:
-            return XD, XT, dtc_train['value'].values
-        else:
-            return XD, XT
-
 def get_PSSM(dataset_path, data_file, max_seq_len):
     pssm = np.loadtxt(path.join(dataset_path, 'davis_dtc', 'hhmake_pssm', data_file.split('/')[-1]))[:max_seq_len, :]
 
@@ -271,6 +288,18 @@ def prepare_interaction_pairs(XD, XT,  Y, rows, cols):
 
     return drug_data,target_data,  affinity
 
+def get_n_folds(all_drugs, n_splits=5, seed=42):
+    test_folds = np.ones(all_drugs.shape[0])
+    kf = KFold(n_splits, random_state=seed)
+
+    j = 0
+    for _, current_test_fold in kf.split(np.arange(all_drugs.shape[0])):
+
+        test_folds[current_test_fold] = j
+        j += 1
+
+    return PredefinedSplit(test_folds)
+
 def get_n_fold_by_drugs(all_drugs, n_splits=5):
     unique_drugs = np.unique(all_drugs, axis=0)
     test_folds = np.ones(all_drugs.shape[0])
@@ -288,39 +317,19 @@ def get_n_fold_by_drugs(all_drugs, n_splits=5):
 
     return PredefinedSplit(test_folds)
 
-def load_data(FLAGS):
-    all_train_drugs, all_train_prots, all_train_Y = None, None, None
-    for dataset_name in FLAGS.datasets_included:
-        cls = DataSet
-        if dataset_name == 'dtc':
-            cls = DTCDataset
+def train_val_test_split(drugs, proteins, Y, fold_id=0, seed=42):
 
-        dataset = cls( dataset_path = FLAGS.dataset_path,
-                       dataset_name=dataset_name,
-                       seqlen = FLAGS.max_seq_len,
-                       smilen = FLAGS.max_smi_len,
-                       protein_format=FLAGS.protein_format,
-                       drug_format=FLAGS.drug_format,
-                       mol2vec_model_path=FLAGS.mol2vec_model_path,
-                       mol2vec_radius=FLAGS.mol2vec_radius,
-                       biovec_model_path=FLAGS.biovec_model_path
-                       )
-        XD, XT, Y = dataset.parse_data()
+    all_indices = np.arange(0, drugs.shape[0])
 
-        if type(all_train_drugs) is not np.ndarray:
-            all_train_drugs, all_train_prots, all_train_Y = np.asarray(XD), np.asarray(XT), np.asarray(Y)
-        else:
-            all_train_drugs = np.concatenate((np.asarray(all_train_drugs), np.asarray(XD)), axis=0)
-            all_train_prots = np.concatenate((np.asarray(all_train_prots), np.asarray(XT)), axis=0)
-            all_train_Y = np.concatenate((np.asarray(all_train_Y), np.asarray(Y)), axis=0)
+    tr_fold, test_fold = list(get_n_folds(all_indices, seed=seed).split())[fold_id]
 
-    if 'kiba' not in FLAGS.datasets_included:
-        all_train_Y = -np.log10(all_train_Y/1e9)
+    new_tr_fold, val_fold = train_test_split(all_indices[tr_fold], test_size=0.25, random_state=seed)
 
-    shuffled_inds = np.asarray([i for i in range(all_train_Y.shape[0])])
+    print("Train: "+str(len(tr_fold))+" validation: "+str(len(val_fold))+\
+                   " and test set:"+str(len(test_fold)))
 
-    for i in range(0, 3):
-        np.random.seed(FLAGS.seed)
-        np.random.shuffle(shuffled_inds)
+    XD_train, XT_train, Y_train = drugs[new_tr_fold], proteins[new_tr_fold], Y[new_tr_fold]
+    XD_val, XT_val, Y_val = drugs[val_fold], proteins[val_fold], Y[val_fold]
+    XD_test, XT_test, Y_test = drugs[test_fold], proteins[test_fold], Y[test_fold]
 
-    return all_train_drugs[shuffled_inds], all_train_prots[shuffled_inds], all_train_Y[shuffled_inds]
+    return XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test

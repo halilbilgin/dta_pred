@@ -44,7 +44,7 @@ def argparser():
         help='Number of filters in CNNs'
     )
     parser.add_argument(
-        '--n_neurons_fc',
+        '--n_fc_neurons',
         type=int,
         default=1024,
         help='Number of neurons in fully connected hidden layers.'
@@ -116,11 +116,24 @@ def argparser():
     )
 
     parser.add_argument(
+        '--optimizer',
+        type=str,
+        default='adam',
+        help='Optimization method to use during training, https://keras.io/optimizers/'
+    )
+
+    parser.add_argument(
         '--dropout',
         type=float,
         default=0.4,
         help='Dropout level.'
     )
+    parser.add_argument(
+            '--cross_validation',
+            type=bool,
+            default=False,
+            help='Dropout level.'
+        )
 
     parser.add_argument(
         '--binary_th',

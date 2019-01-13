@@ -6,159 +6,122 @@ from argparse import Namespace
 from .datahelper import *
 from keras.models import load_model, Model
 from keras.layers import Embedding, Dense
-from dta_pred.models.dnn_model import dnn_model, fully_connected_model, \
+from dta_pred.models.dnn_model import auto_model, fully_connected_model, \
     simple_cnn_encoder, inception_encoder, get_pooling
 from .emetrics import *
 from .utils import over_sampling, under_sampling, makedirs
+from .protein_encoding import auto_protein_encoding
+from .drug_encoding import auto_drug_encoding
+
+from .models import *
 from .arguments import logging
 import os
-
 
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
 
-def get_dataset(FLAGS):
-    all_train_drugs, all_train_prots, all_train_Y = load_data(FLAGS)
+def load_data(FLAGS):
+    dataset_per_task = {}
 
-    train_drugs, val_drugs = 70, 70
-    if 'kiba' in FLAGS.datasets_included:
-        train_drugs, val_drugs = 10, 300
+    for dataset_name in FLAGS.datasets_included:
+        dataset = DataSet( dataset_path = FLAGS.dataset_path,
+                       dataset_name=dataset_name,
+                       seqlen = FLAGS.max_seq_len,
+                       smilen = FLAGS.max_smi_len,
+                       protein_format=FLAGS.protein_format,
+                       drug_format=FLAGS.drug_format,
+                       mol2vec_model_path=FLAGS.mol2vec_model_path,
+                       mol2vec_radius=FLAGS.mol2vec_radius,
+                       biovec_model_path=FLAGS.biovec_model_path
+                       )
+        XD, XT, Y = dataset.parse_data()
 
-    tr_fold, test_fold = get_train_test_split_by_drugs(all_train_drugs, train_drugs, seed=FLAGS.seed)
+        if dataset.interaction_type not in dataset_per_task:
+            dataset_per_task[dataset.interaction_type] = {'drugs': None, 'proteins': None, 'Y': None}
 
-    new_tr_fold, val_fold = get_train_test_split_by_drugs(all_train_drugs[tr_fold], val_drugs, seed=FLAGS.seed)
-    val_fold = tr_fold[val_fold]
-    new_tr_fold = tr_fold[new_tr_fold]
-    print("Train: "+str(len(new_tr_fold))+" validation: "+str(len(val_fold))+\
-                   " and test set:"+str(len(test_fold)))
+        if dataset.interaction_type == 'Kd':
+            Y = -np.log10(np.asarray(Y)/1e9)
 
-    sampling_method = None
-    if FLAGS.resampling == 'over':
-        sampling_method = over_sampling
-    elif FLAGS.resampling == 'under':
-        sampling_method = under_sampling
+        data_dict = dataset_per_task[dataset.interaction_type]
 
-    if sampling_method:
-        new_tr_fold, _ = sampling_method(pd.Series(new_tr_fold), pd.Series(all_train_Y[new_tr_fold] > 7))
-        new_tr_fold = new_tr_fold.values[:, 0]
-        XD_train, XT_train, Y_train = all_train_drugs[new_tr_fold], all_train_prots[new_tr_fold], all_train_Y[
-            new_tr_fold]
+        if type(data_dict['drugs']) is not np.ndarray:
+            data_dict['drugs'], data_dict['proteins'], data_dict['Y']= np.asarray(XD), np.asarray(XT), np.asarray(Y)
+        else:
+            data_dict['drugs'] = np.concatenate((np.asarray(data_dict['drugs']), np.asarray(XD)), axis=0)
+            data_dict['proteins'] = np.concatenate((np.asarray(data_dict['proteins']), np.asarray(XT)), axis=0)
+            data_dict['Y'] = np.concatenate((np.asarray(data_dict['Y']), np.asarray(Y)), axis=0)
+
+    for interaction_type, data in dataset_per_task.items():
+        shuffled_inds = np.asarray([i for i in range(data['proteins'].shape[0])])
+
+        for i in range(0, 3):
+            np.random.seed(FLAGS.seed)
+            np.random.shuffle(shuffled_inds)
+
+        data['drugs'], data['proteins'], data['Y'] = data['drugs'][shuffled_inds], data['proteins'][shuffled_inds], data['Y'][shuffled_inds]
+
+    if len(dataset_per_task.keys()) == 1:
+        return dataset_per_task[dataset.interaction_type]
     else:
-        XD_train, XT_train, Y_train = all_train_drugs[tr_fold], all_train_prots[tr_fold], all_train_Y[tr_fold]
+        return dataset_per_task
 
-    XD_val, XT_val, Y_val = all_train_drugs[val_fold], all_train_prots[val_fold], all_train_Y[val_fold]
-    XD_test, XT_test, Y_test = all_train_drugs[test_fold], all_train_prots[test_fold], all_train_Y[test_fold]
+def train_multitask_model_v2(datasets, inputs, encode_smiles, encode_protein, smi_model,
+                             seq_model, interaction_model, output_path, batch_size,
+                             num_epoch=100, fold_id=0, **kwargs):
+    XDinput, encode_smiles = encode_smiles()
+    XTinput, encode_protein = encode_protein()
 
-    return XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test
+    tasks = datasets.keys()
 
-def build_model(FLAGS, interaction_model=None):
-    if interaction_model == None:
-        interaction_model = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc,
-                                              FLAGS.dropout, 'fc', FLAGS.apply_bn)
+    shared_model = DTIModel(inputs, encode_smiles, encode_protein, smi_model(), seq_model(), interaction_model())
+    shared_layers = shared_model.interaction_module
 
-    smi_model = None
-    smi_embedding = Embedding(input_dim=CHARISOSMILEN + 1, output_dim=128,
-                              input_length=FLAGS.max_smi_len, name='smi_embedding')
-    if FLAGS.smi_model == 'inception':
-        smi_model = inception_encoder(FLAGS.num_windows, FLAGS.smi_window_length, 'smi_enc')
-    elif FLAGS.smi_model == 'simple_cnn':
-        smi_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
-                                       FLAGS.smi_window_length, 'smi_enc')
-    else:
-        smi_embedding = None
+    losses = {}
 
-    seq_model = None
-    seq_embedding = Embedding(input_dim=CHARPROTLEN + 1, output_dim=128,
-                              input_length=FLAGS.max_seq_len, name='seq_embedding')
-    if FLAGS.seq_model == 'inception':
-        seq_model = inception_encoder(FLAGS.num_windows, FLAGS.seq_window_length, 'seq_enc')
-    elif FLAGS.seq_model == 'simple_cnn':
-        seq_model = simple_cnn_encoder(FLAGS.n_cnn_layers, FLAGS.num_windows,
-                                       FLAGS.seq_window_length, 'seq_enc')
-    else:
-        seq_embedding = None
+    for key, dataset in datasets.items():
+        datasets[key] = train_val_test_split(dataset['drugs'], dataset['proteins'], dataset['Y'], fold_id=fold_id, seed=kwargs['seed'])
 
-    gridmodel = dnn_model(FLAGS.drug_format, FLAGS.protein_format, FLAGS.max_smi_len,
-                          FLAGS.max_seq_len, interaction_model=interaction_model,
-                          loss_fn=FLAGS.loss, smi_model=smi_model, seq_model=seq_model, smi_embedding=smi_embedding,
-                          seq_embedding=seq_embedding, smi_pooling=get_pooling(FLAGS.pooling_type),
-                          seq_pooling=get_pooling(FLAGS.pooling_type))
-    return gridmodel
+        if key == 'Kd':
+            losses[key] = 'crossentropy_mse_combined'
+        else:
+            losses[key] = kwargs['loss']
 
-def train_multitask_model(FLAGS):
+    task_specific_layers = {}
+    for task in tasks:
+        task_specific_layers[task] = fully_connected_model(name=task+'_fc', **kwargs)
 
-    multitask_flags = Namespace(**vars(FLAGS))
-    multitask_flags.loss = 'mean_squared_error'
-    multitask_flags.datasets_included=['kiba']
-    multitask_flags.checkpoints_path = os.path.join(multitask_flags.checkpoints_path, 'kiba')
-    makedirs(os.path.join(multitask_flags.checkpoints_path, 'kiba'))
+    multitask_model = MultiTaskModel(inputs, shared_layers, task_specific_layers, tasks)
 
-    result = train_model(multitask_flags, 2)
+    models = multitask_model.compile(optimizers=kwargs['optimizer'], losses=losses)
 
-    def new_model_base():
-        model_kiba = load_model(result['checkpoint_file'])
+    checkpoint_callbacks = {}
 
-        encode_interaction = model_kiba.get_layer('encode_interaction').output
+    checkpoints_path = os.path.join(output_path, 'checkpoints')
+    makedirs(checkpoints_path)
+    log_path = os.path.join(output_path, 'logs')
+    makedirs(log_path)
 
-        FC = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc, FLAGS.dropout, 'kd_fc',
-                                   FLAGS.apply_bn)(encode_interaction)
+    for task in tasks:
+        param_name = str(binascii.b2a_hex(os.urandom(4))).replace("'", '')
 
-        predictions = Dense(1, kernel_initializer='normal')(FC)
+        checkpoint_file = os.path.join(checkpoints_path, task + '_' + param_name + '.h5')
 
-        interactionModel = Model(inputs=model_kiba.inputs, outputs=[predictions])
-
-        interactionModel.compile(optimizer='adam', loss=FLAGS.loss, metrics=[cindex, f1])
-
-        return interactionModel
-
-    return train_model(FLAGS, 3, new_model_base)
-
-def train_multitask_model_v2(FLAGS):
-    XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
-            Y_train, Y_val, Y_test = get_dataset(FLAGS)
-
-    multitask_flags = Namespace(**vars(FLAGS))
-    multitask_flags.loss = 'mean_squared_error'
-    multitask_flags.datasets_included=['kiba']
-    multitask_flags.checkpoints_path = os.path.join(multitask_flags.checkpoints_path, 'kiba')
-    makedirs(os.path.join(multitask_flags.checkpoints_path, 'kiba'))
-
-    XD_train_kiba, XD_val_kiba, XD_test_kiba, XT_train_kiba, XT_val_kiba, XT_test_kiba, \
-            Y_train_kiba, Y_val_kiba, Y_test_kiba = get_dataset(multitask_flags)
-
-    FC_kiba = fully_connected_model(FLAGS.n_fc_layers*2, FLAGS.n_neurons_fc,
-                                      FLAGS.dropout, 'shared_fc', FLAGS.apply_bn)
-
-    model_kiba = build_model(multitask_flags, FC_kiba)
-    model_kiba.summary()
-    encode_interaction = model_kiba.get_layer('shared_fc_'+str(FLAGS.n_fc_layers-1)).output
-
-    FC = fully_connected_model(FLAGS.n_fc_layers, FLAGS.n_neurons_fc, FLAGS.dropout, 'kd_fc',
-                               FLAGS.apply_bn)(encode_interaction)
-
-    predictions = Dense(1, kernel_initializer='normal')(FC)
-
-    model_kd = Model(inputs=model_kiba.inputs, outputs=[predictions])
-    model_kd.compile(optimizer='adam', loss=FLAGS.loss, metrics=[cindex, f1])
-
-    param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
-    checkpoint_dir = os.path.join(FLAGS.checkpoints_path)
-    makedirs(checkpoint_dir)
-    checkpoint_file = os.path.join(checkpoint_dir, 'davis_dtc_dta_' + param_name + '.h5')
-
-    checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
+        checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
                                           save_best_only=True)
-    for i in range(FLAGS.num_epoch):
-        gridres = model_kd.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
-                                epochs=1,
-                                validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
-                                , callbacks=[checkpoint_callback], verbose=2)
-        model_kiba.fit(([XD_train_kiba, XT_train_kiba]), Y_train_kiba, batch_size=FLAGS.batch_size,
-                     epochs=1,
-                     validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
-                     , callbacks=[checkpoint_callback], verbose=2)
 
-    gridmodel = load_model(checkpoint_file)
+        checkpoint_callbacks[task] = checkpoint_callback
+
+    for i in range(num_epoch):
+        for task in tasks:
+            XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = datasets[task]
+
+            gridres = models[task].fit(([XD_train, XT_train]), Y_train, batch_size=batch_size,
+                                   epochs=1,
+                                   validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
+                                   , callbacks=[checkpoint_callbacks[task]], verbose=2)
+
+    gridmodel = load_model(checkpoint_callbacks['Kd'])
+    _, _, XD_test, _, _, XT_test, _, _, Y_test = datasets['Kd']
 
     predicted_labels = gridmodel.predict([np.array(XD_test), np.array(XT_test)])
 
@@ -166,43 +129,45 @@ def train_multitask_model_v2(FLAGS):
             'test_loss': mean_squared_error(Y_test, predicted_labels),
             'test_cindex': get_cindex(Y_test, predicted_labels),
             'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
-            'test_f1': f1_score(Y_test > FLAGS.binary_th, predicted_labels > FLAGS.binary_th),
+            'test_f1': f1_score(Y_test > kwargs['binary_th'], predicted_labels > kwargs['binary_th']),
             'train_val_hist': gridres.history,
             'checkpoint_file': checkpoint_file
         }
 
-def train_model(FLAGS, n_repeats=3, model_fn=None):
+def train_model(dataset, encode_smiles, encode_protein, smi_model, seq_model, interaction_model,
+                output_path, optimizer, loss, num_epoch, batch_size, n_repeats=3, **kwargs):
 
     XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
-            Y_train, Y_val, Y_test = get_dataset(FLAGS)
+            Y_train, Y_val, Y_test = train_val_test_split(seed=kwargs['seed'], **dataset)
 
-    param_name = str(binascii.b2a_hex(os.urandom(8))).replace("'", '')
-    checkpoint_dir = os.path.join(FLAGS.checkpoints_path)
+    param_name = str(binascii.b2a_hex(os.urandom(4))).replace("'", '')
+    checkpoint_dir = os.path.join(output_path, 'checkpoints')
     makedirs(checkpoint_dir)
+
     early_stopping_callback = EarlyStopping(monitor='val_loss', patience=25)
     results = []
     best_rmse_ind = 0
 
     for repeat_id in range(n_repeats):
-        checkpoint_file = os.path.join(checkpoint_dir, 'davis_dtc_dta_' + param_name + 'repeat' + str(repeat_id) + '.h5')
-
+        checkpoint_file = os.path.join(checkpoint_dir,
+                                       'davis_dtc_dta_' + param_name + 'repeat' + str(repeat_id) + '.h5')
         checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
                                               save_best_only=True)
-
         K.clear_session()
+        XDinput, encode_smiles = encode_smiles()
+        XTinput, encode_protein = encode_protein()
 
-        if model_fn is None:
-            gridmodel = build_model(FLAGS)
-        else:
-            gridmodel = model_fn()
+        model = DTIModel([XDinput, XTinput], encode_smiles, encode_protein, smi_model(), seq_model(), interaction_model())
+        compiled_model = model.compile(optimizer=optimizer, loss=loss)
 
-        gridres = gridmodel.fit(([XD_train, XT_train]), Y_train, batch_size=FLAGS.batch_size,
-                      epochs=FLAGS.num_epoch,
+
+        gridres = compiled_model.fit(([XD_train, XT_train]), Y_train, batch_size=batch_size,
+                      epochs=num_epoch,
                   validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
                       , callbacks=[early_stopping_callback, checkpoint_callback], verbose=2)
 
         K.clear_session()
-        del gridmodel
+        del compiled_model, model
 
         gridmodel = load_model(checkpoint_file)
 
@@ -211,28 +176,34 @@ def train_model(FLAGS, n_repeats=3, model_fn=None):
             'test_loss': mean_squared_error(Y_test, predicted_labels),
             'test_cindex': get_cindex(Y_test, predicted_labels),
             'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
-            'test_f1': f1_score(Y_test > FLAGS.binary_th, predicted_labels > FLAGS.binary_th),
+            'test_f1': f1_score(Y_test > kwargs['binary_th'], predicted_labels > kwargs['binary_th']),
             'train_val_hist': gridres.history,
             'checkpoint_file': checkpoint_file
         })
 
-        logging('--REPEAT' +str(repeat_id) + '--\n' + str(results[-1]) + '\n----\n', FLAGS)
+        logging('--REPEAT' +str(repeat_id) + '--\n' + str(results[-1]) + '\n----\n')
 
         if results[best_rmse_ind]['test_rmse'] > results[repeat_id]['test_rmse']:
             best_rmse_ind = repeat_id
 
-        return results[best_rmse_ind]
-
+    return results[best_rmse_ind]
 
 def run_experiment(_run, FLAGS):
     FLAGS = Namespace(**vars(FLAGS))
 
-    if FLAGS.model_name == 'multitask_model':
-        results = train_multitask_model(FLAGS)
-    elif FLAGS.model_name == 'multitask_model_v2':
-        results = train_multitask_model_v2(FLAGS)
+    data_per_task = load_data(FLAGS)
+
+    encode_smiles = auto_drug_encoding(smi_input_dim=FLAGS.max_smi_len, **vars(FLAGS))
+    encode_protein = auto_protein_encoding(seq_input_dim=FLAGS.max_seq_len, **vars(FLAGS))
+
+    FLAGS.smi_model = auto_model(FLAGS.smi_model, kernel_size=FLAGS.smi_window_length, name='smi_enc', **vars(FLAGS))
+    FLAGS.seq_model = auto_model(FLAGS.seq_model, kernel_size=FLAGS.seq_window_length, name='seq_enc', **vars(FLAGS))
+    FLAGS.interaction_model = auto_model('fully_connected', name='interaction_fc', **vars(FLAGS))
+
+    if 'drugs' not in data_per_task:
+        results = train_multitask_model_v2(data_per_task, encode_smiles, encode_protein, **vars(FLAGS))
     else:
-        results = train_model(FLAGS)
+        results = train_model(data_per_task, encode_smiles, encode_protein, **vars(FLAGS))
 
     logging('---BEST RUN test results---', FLAGS)
 
