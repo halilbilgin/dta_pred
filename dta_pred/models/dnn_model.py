@@ -7,6 +7,7 @@ from dta_pred.emetrics import cindex, f1
 import keras.metrics
 keras.metrics.cindex = cindex
 keras.metrics.f1 = f1
+from keras import backend as K
 
 from dta_pred import CHARISOSMILEN, CHARPROTLEN
 
@@ -28,7 +29,7 @@ def inception_encoder(num_windows, kernel_size, name):
     def inception_base(inputs):
         name_prefix = name+'_'
 
-        tower_one = MaxPooling1D(num_windows, strides=1, padding='same',
+        tower_one = MaxPooling1D(kernel_size, strides=1, padding='same',
                                  name=name_prefix+'_1')(inputs)
         tower_one = Conv1D(num_windows, kernel_size, activation='relu', padding='same',
                                  name=name_prefix+'_2')(tower_one)
