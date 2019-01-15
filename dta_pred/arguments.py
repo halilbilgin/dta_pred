@@ -49,19 +49,6 @@ def argparser():
         default=1024,
         help='Number of neurons in fully connected hidden layers.'
     )
-    parser.add_argument(
-        '--pooling_type',
-        type=str,
-        default="GlobalMaxPooling",
-        help='Pool type. i.e. MaxPooling, GlobalAveragePooling'
-    )
-
-    parser.add_argument(
-        '--resampling',
-        type=str,
-        default='over',
-        help='Resampling method for train set. It can take over, under and None'
-    )
 
     parser.add_argument(
         '--n_fc_layers',
@@ -73,13 +60,13 @@ def argparser():
     parser.add_argument(
         '--max_seq_len',
         type=int,
-        default=0,
+        default=None,
         help='Length of input sequences.'
     )
     parser.add_argument(
         '--max_smi_len',
         type=int,
-        default=0,
+        default=None,
         help='Length of input sequences.'
     )
     parser.add_argument(
@@ -168,12 +155,6 @@ def argparser():
         help='MongoDB configuration'
     )
     parser.add_argument(
-        '--model_name',
-        type=str,
-        default='',
-        help='Model name, multitask_model, multitask_model_v2, or default model'
-    )
-    parser.add_argument(
         '--seed',
         type=int,
         default=42,
@@ -221,6 +202,12 @@ def argparser():
         default='mean_squared_error',
         help='Loss function. It can take mean_squared_error and crossentropy_mse_combined'
     )
+    parser.add_argument(
+        '--l2_regularizer_fc',
+        type=float,
+        default=0,
+        help='L2 regularization parameter for fully connected layers'
+    )
 
     FLAGS, unparsed = parser.parse_known_args()
 
@@ -229,8 +216,8 @@ def argparser():
 
     return FLAGS
 
-def logging(msg, FLAGS):
-    fpath = os.path.join( FLAGS.log_path, "log.txt" )
+def logging(msg, log_path):
+    fpath = os.path.join( log_path, "log.txt" )
     with open( fpath, "a" ) as fw:
         fw.write("%s\n" % msg)
     #print(msg)

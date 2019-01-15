@@ -2,7 +2,7 @@ from __future__ import print_function
 import binascii
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from argparse import Namespace
-
+from keras import regularizers
 from .data_helper import *
 from keras.models import load_model, Model
 from keras.layers import Embedding, Dense
@@ -65,12 +65,12 @@ def load_data(FLAGS):
     else:
         return dataset_per_task
 
-def train_multitask_model_v2(datasets, inputs, encode_smiles, encode_protein, smi_model,
+def train_multitask_model_v2(datasets, encode_smiles_fn, encode_protein_fn, smi_model,
                              seq_model, interaction_model, output_path, batch_size,
                              num_epoch=100, fold_id=0, **kwargs):
-    XDinput, encode_smiles = encode_smiles()
-    XTinput, encode_protein = encode_protein()
-
+    XDinput, encode_smiles = encode_smiles_fn()
+    XTinput, encode_protein = encode_protein_fn()
+    inputs = [XDinput, XTinput]
     tasks = datasets.keys()
 
     shared_model = DTIModel(inputs, encode_smiles, encode_protein, smi_model(), seq_model(), interaction_model())
@@ -82,17 +82,18 @@ def train_multitask_model_v2(datasets, inputs, encode_smiles, encode_protein, sm
         datasets[key] = train_val_test_split(dataset['drugs'], dataset['proteins'], dataset['Y'], fold_id=fold_id, seed=kwargs['seed'])
 
         if key == 'Kd':
-            losses[key] = 'crossentropy_mse_combined'
-        else:
             losses[key] = kwargs['loss']
+        else:
+            losses[key] = 'mean_squared_error'
 
     task_specific_layers = {}
     for task in tasks:
+        kwargs['n_fc_neurons'] = int(kwargs['n_fc_neurons'] / 4)
         task_specific_layers[task] = fully_connected_model(name=task+'_fc', **kwargs)
 
     multitask_model = MultiTaskModel(inputs, shared_layers, task_specific_layers, tasks)
 
-    models = multitask_model.compile(optimizers=kwargs['optimizer'], losses=losses)
+    multitask_model.compile(optimizers=kwargs['optimizer'], losses=losses)
 
     checkpoint_callbacks = {}
 
@@ -111,30 +112,21 @@ def train_multitask_model_v2(datasets, inputs, encode_smiles, encode_protein, sm
 
         checkpoint_callbacks[task] = checkpoint_callback
 
-    for i in range(num_epoch):
-        for task in tasks:
-            XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = datasets[task]
-
-            gridres = models[task].fit(([XD_train, XT_train]), Y_train, batch_size=batch_size,
-                                   epochs=1,
-                                   validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
-                                   , callbacks=[checkpoint_callbacks[task]], verbose=2)
+    multitask_model.train(datasets, checkpoint_callbacks=checkpoint_callbacks, num_epoch=num_epoch, batch_size=batch_size, verbose=2)
 
     gridmodel = load_model(checkpoint_callbacks['Kd'])
+
     _, _, XD_test, _, _, XT_test, _, _, Y_test = datasets['Kd']
-
     predicted_labels = gridmodel.predict([np.array(XD_test), np.array(XT_test)])
-
     return {
             'test_loss': mean_squared_error(Y_test, predicted_labels),
             'test_cindex': get_cindex(Y_test, predicted_labels),
             'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
             'test_f1': f1_score(Y_test > kwargs['binary_th'], predicted_labels > kwargs['binary_th']),
-            'train_val_hist': gridres.history,
             'checkpoint_file': checkpoint_file
         }
 
-def train_model(dataset, encode_smiles, encode_protein, smi_model, seq_model, interaction_model,
+def train_model(dataset, encode_smiles_fn, encode_protein_fn, smi_model, seq_model, interaction_model,
                 output_path, optimizer, loss, num_epoch, batch_size, n_repeats=3, **kwargs):
 
     XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
@@ -143,6 +135,8 @@ def train_model(dataset, encode_smiles, encode_protein, smi_model, seq_model, in
     param_name = str(binascii.b2a_hex(os.urandom(4))).replace("'", '')
     checkpoint_dir = os.path.join(output_path, 'checkpoints')
     makedirs(checkpoint_dir)
+    log_path = os.path.join(output_path, 'logs')
+    makedirs(log_path)
 
     early_stopping_callback = EarlyStopping(monitor='val_loss', patience=25)
     results = []
@@ -154,16 +148,15 @@ def train_model(dataset, encode_smiles, encode_protein, smi_model, seq_model, in
         checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
                                               save_best_only=True)
         K.clear_session()
-        XDinput, encode_smiles = encode_smiles()
-        XTinput, encode_protein = encode_protein()
+        XDinput, encode_smiles = encode_smiles_fn()
+        XTinput, encode_protein = encode_protein_fn()
 
         model = DTIModel([XDinput, XTinput], encode_smiles, encode_protein, smi_model(), seq_model(), interaction_model())
         compiled_model = model.compile(optimizer=optimizer, loss=loss)
 
-
         gridres = compiled_model.fit(([XD_train, XT_train]), Y_train, batch_size=batch_size,
                       epochs=num_epoch,
-                  validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val))
+                  validation_data=(([XD_val, XT_val]), np.array(Y_val))
                       , callbacks=[early_stopping_callback, checkpoint_callback], verbose=2)
 
         K.clear_session()
@@ -181,7 +174,7 @@ def train_model(dataset, encode_smiles, encode_protein, smi_model, seq_model, in
             'checkpoint_file': checkpoint_file
         })
 
-        logging('--REPEAT' +str(repeat_id) + '--\n' + str(results[-1]) + '\n----\n')
+        logging('--REPEAT' +str(repeat_id) + '--\n' + str(results[-1]) + '\n----\n', log_path)
 
         if results[best_rmse_ind]['test_rmse'] > results[repeat_id]['test_rmse']:
             best_rmse_ind = repeat_id
@@ -198,29 +191,54 @@ def run_experiment(_run, FLAGS):
 
     FLAGS.smi_model = auto_model(FLAGS.smi_model, kernel_size=FLAGS.smi_window_length, name='smi_enc', **vars(FLAGS))
     FLAGS.seq_model = auto_model(FLAGS.seq_model, kernel_size=FLAGS.seq_window_length, name='seq_enc', **vars(FLAGS))
-    FLAGS.interaction_model = auto_model('fully_connected', name='interaction_fc', **vars(FLAGS))
+    FLAGS.interaction_model = auto_model('fully_connected', name='interaction_fc',
+                                         kernel_regularizer=regularizers.l2(FLAGS.l2_regularizer_fc),
+                                         **vars(FLAGS))
 
     if 'drugs' not in data_per_task:
-        results = train_multitask_model_v2(data_per_task, encode_smiles, encode_protein, **vars(FLAGS))
+        train_fn = train_multitask_model_v2
     else:
-        results = train_model(data_per_task, encode_smiles, encode_protein, **vars(FLAGS))
+        train_fn = train_model
 
-    logging('---BEST RUN test results---', FLAGS)
+    results = []
+    for i in range(5):
+        results.append(train_fn(data_per_task, encode_smiles, encode_protein, fold_id=i, **vars(FLAGS)))
+        K.clear_session()
 
-    for metric, val in results.items():
-        if metric[:4] == 'test':
-            if type(val) == np.ndarray:
-                val = val[0]
+    mean_dict = {}
+    std_dict = {}
+    print(results)
 
-            _run.log_scalar(metric, val)
-            logging(metric + '=' + str(val), FLAGS)
+    for key in results[0].keys():
+        if 'test' not in key:
+            continue
+
+        cur_result = np.asarray([val[key] for val in results])
+
+        mean_dict[key] = np.mean(cur_result)
+        std_dict[key] = np.std(cur_result)
+
+    log_path = os.path.join(FLAGS.output_path, 'logs')
+    logging('---BEST RUN test results---', log_path=log_path)
+
+    for metric in mean_dict.keys():
+        result_mean, result_std = mean_dict[metric], std_dict[metric]
+        if type(result_mean) == np.ndarray:
+            result_mean= result_mean[0]
+        if type(result_std) == np.ndarray:
+            result_std = result_std[0]
+
+        _run.log_scalar(metric+'_mean', result_mean)
+        _run.log_scalar(metric+'_std', result_std)
+
+        logging(metric+'_mean' + '=' + str(result_mean), log_path=log_path)
 
     #_run.add_artifact(results['checkpoint_file'], 'model_file')
 
-    for metric, vals in results['train_val_hist'].items():
-        prefix = 'train_'
-        if 'val' in metric:
-            prefix = 'val_'
+    #for metric, vals in results['train_val_hist'].items():
+    #    prefix = 'train_'
+    #    if 'val' in metric:
+    #        prefix = 'val_'
 
-        for i, val in enumerate(vals):
-            _run.log_scalar(prefix+metric, val, step=i)
+    #    for i, val in enumerate(vals):
+    #        _run.log_scalar(prefix+metric, val, step=i)

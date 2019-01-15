@@ -7,6 +7,8 @@ from dta_pred.metrics import cindex, f1
 import keras.metrics
 keras.metrics.cindex = cindex
 keras.metrics.f1 = f1
+from keras import regularizers
+
 from keras import backend as K
 
 from dta_pred import CHARISOSMILEN, CHARPROTLEN
@@ -27,22 +29,22 @@ def simple_cnn_encoder(n_cnn_layers, num_windows, kernel_size, name, **kwargs):
 
 def inception_encoder(num_windows, kernel_size, name, **kwargs):
     def inception_base(inputs):
-        name_prefix = name+'_'
+        name_prefix = name + '_'
 
         tower_one = MaxPooling1D(kernel_size, strides=1, padding='same',
-                                 name=name_prefix+'_1')(inputs)
+                                 name=name_prefix + '_1')(inputs)
         tower_one = Conv1D(num_windows, kernel_size, activation='relu', padding='same',
-                                 name=name_prefix+'_2')(tower_one)
+                           name=name_prefix + '_2')(tower_one)
 
-        tower_two = Conv1D(num_windows, kernel_size*2, activation='relu', padding='same',
-                                 name=name_prefix+'_3')(inputs)
-        tower_two = Conv1D(num_windows, kernel_size*3, activation='relu', padding='same',
-                                 name=name_prefix+'_4')(tower_two)
+        tower_two = Conv1D(num_windows, kernel_size * 2, activation='relu', padding='same',
+                           name=name_prefix + '_3')(inputs)
+        tower_two = Conv1D(num_windows, kernel_size * 3, activation='relu', padding='same',
+                           name=name_prefix + '_4')(tower_two)
 
-        tower_three = Conv1D(num_windows, kernel_size*2, activation='relu',
-                             padding='same', name=name_prefix+'_5')(inputs)
-        tower_three = Conv1D(num_windows, kernel_size*4, activation='relu',
-                             padding='same', name=name_prefix+'_6')(tower_three)
+        tower_three = Conv1D(num_windows, kernel_size * 2, activation='relu',
+                             padding='same', name=name_prefix + '_5')(inputs)
+        tower_three = Conv1D(num_windows, kernel_size * 4, activation='relu',
+                             padding='same', name=name_prefix + '_6')(tower_three)
 
         x = concatenate([tower_one, tower_two, tower_three], axis=2)
 
@@ -50,11 +52,14 @@ def inception_encoder(num_windows, kernel_size, name, **kwargs):
 
     return inception_base
 
-def fully_connected_model(n_fc_layers, n_fc_neurons, dropout, name='fc', apply_bn=False, **kwargs):
+
+def fully_connected_model(n_fc_layers, n_fc_neurons, dropout, name='fc',
+                          kernel_regularizer=None, apply_bn=False, **kwargs):
     def fully_connected_model_base(encode_interaction):
         FC = encode_interaction
         for i in range(n_fc_layers):
-            FC = Dense(n_fc_neurons, activation='relu', name=name+'_'+str(i))(FC)
+            FC = Dense(n_fc_neurons, activation='relu',
+                       kernel_regularizer=kernel_regularizer, name=name+'_'+str(i))(FC)
             FC = Dropout(dropout)(FC)
             if apply_bn:
                 FC = BatchNormalization()(FC)
