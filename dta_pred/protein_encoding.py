@@ -3,21 +3,21 @@ from dta_pred.data_helper import CHARPROTLEN
 
 def biovec_encoding(seq_input_dim, **kwargs):
     XTinput = Input(shape=(seq_input_dim,), )
-    encode_protein = XTinput
+    encoded_protein = XTinput
 
-    return XTinput, encode_protein
+    return XTinput, encoded_protein
 
 def pssm_encoding(seq_input_dim, **kwargs):
     XTinput = Input(shape=(seq_input_dim, 20), dtype='float32')
-    encode_protein = XTinput
-    return XTinput, encode_protein
+    encoded_protein = XTinput
+    return XTinput, encoded_protein
 
 def sequence_encoding(seq_input_dim, max_seq_len, **kwargs):
     XTinput = Input(shape=(seq_input_dim,), dtype='int32')
-    encode_protein = Embedding(input_dim=CHARPROTLEN + 1, output_dim=128,
+    encoded_protein = Embedding(input_dim=CHARPROTLEN + 1, output_dim=128,
                               input_length=max_seq_len, name='seq_embedding')(XTinput)
 
-    return XTinput, encode_protein
+    return XTinput, encoded_protein
 
 def auto_protein_encoding(protein_format, **kwargs):
     if protein_format == 'biovec':

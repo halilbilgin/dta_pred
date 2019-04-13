@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from os import path
 import sys
+import glob
 from sklearn.model_selection import KFold, PredefinedSplit, train_test_split
 #from keras.preprocessing.sequence import pad_sequences
 
@@ -44,51 +45,70 @@ CHARISOSMILEN = 64
 #
 ## ######################## ## 
 
-#  Y = -(np.log10(Y/(math.pow(math.e,9))))
+def label_smiles(smiles_string, MAX_SMI_LEN, smiles_to_integer):
+    """
+    Convert SMILES string into a vector of integers
 
-def one_hot_smiles(line, MAX_SMI_LEN, smi_ch_ind):
-    X = np.zeros((MAX_SMI_LEN, len(smi_ch_ind))) #+1
-
-    for i, ch in enumerate(line[:MAX_SMI_LEN]):
-        X[i, (smi_ch_ind[ch]-1)] = 1
-
-    return X
-
-def one_hot_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
-    X = np.zeros((MAX_SEQ_LEN, len(smi_ch_ind)))
-    for i, ch in enumerate(line[:MAX_SEQ_LEN]):
-        X[i, (smi_ch_ind[ch])-1] = 1
-
-    return X
-
-def label_smiles(line, MAX_SMI_LEN, smi_ch_ind):
+    :param smiles_string: SMILES string
+    :param MAX_SMI_LEN: length of the encoded vector. If SMILES string length is less than this, zero padding will
+    be applied, if it is greater, then string will be clipped.
+    :param smiles_to_integer: A dictionary to encode each letter in the SMILES string to an integer value
+    :return: np.ndarray, encoded SMILES
+    """
     if(MAX_SMI_LEN == None):
-        X = np.zeros(len(line))
+        X = np.zeros(len(smiles_string))
     else:
         X = np.zeros(MAX_SMI_LEN)
 
-    for i, ch in enumerate(line[:MAX_SMI_LEN]): #	x, smi_ch_ind, y
-        if ch not in smi_ch_ind:
-            print('Not found', ch, 'at the index:', i, 'total:', len(line))
+    for i, ch in enumerate(smiles_string[:MAX_SMI_LEN]): #	x, smi_ch_ind, y
+        if ch not in smiles_to_integer:
+            print('Not found', ch, 'at the index:', i, 'total:', len(smiles_string))
         else:
-            X[i] = smi_ch_ind[ch]
+            X[i] = smiles_to_integer[ch]
 
     return X
 
-def label_sequence(line, MAX_SEQ_LEN, smi_ch_ind):
+def label_sequence(line, MAX_SEQ_LEN, aminoacid_to_integer):
+    """
+    Convert aminoacid sequence into a vector of integers
+
+    :param smiles_string: SMILES string
+    :param MAX_SEQ_LEN: length of the encoded vector. If aminoacid sequence length is less than this, zero padding will
+    be applied, if it is greater, then string will be clipped.
+    :param aminoacid_to_integer: A dictionary to encode each letter in the SMILES string to an integer value
+    :return: np.ndarray, encoded aminoacid sequence
+    """
+
     if MAX_SEQ_LEN == None:
         X = np.zeros(len(line))
     else:
         X = np.zeros(MAX_SEQ_LEN)
 
     for i, ch in enumerate(line[:MAX_SEQ_LEN]):
-        X[i] = smi_ch_ind[ch]
+        if ch == '\n':
+            continue
+
+        X[i] = aminoacid_to_integer[ch]
 
     return X #.tolist()
 
 class DataSet(object):
+    """Helper class to parse drug target interaction datasets"""
+
     def __init__(self, dataset_path, dataset_name, seqlen, smilen, protein_format='sequence', drug_format='labeled_smiles',
                  mol2vec_model_path=None, mol2vec_radius=1, biovec_model_path=None):
+        """
+
+        :param dataset_path:
+        :param dataset_name:
+        :param seqlen:
+        :param smilen:
+        :param protein_format:
+        :param drug_format:
+        :param mol2vec_model_path:
+        :param mol2vec_radius:
+        :param biovec_model_path:
+        """
         self.SEQLEN = seqlen
         self.SMILEN = smilen
         #self.NCLASSES = n_classes
@@ -146,9 +166,12 @@ class DataSet(object):
 
     def parse_csv(self, with_label):
         if with_label:
-            dtc_train = pd.read_csv(path.join(self.fpath, 'train_hhmake.csv'))
+            dtc_train = pd.DataFrame()
+            for file in glob.glob(path.join(self.fpath,'train*')):
+                dtc_train = pd.concat((dtc_train, pd.read_csv(path.join(self.fpath, file))), axis=0)
         else:
-            dtc_train = pd.read_csv(self.fpath)
+            for file in glob.glob(path.join(self.fpath,'test*')):
+                dtc_train = pd.concat((dtc_train, pd.read_csv(path.join(self.fpath, file))), axis=0)
 
         for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
             dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]

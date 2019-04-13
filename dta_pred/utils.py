@@ -88,7 +88,7 @@ def train_val_test_split(drugs, proteins, Y, fold_id=0, seed=42):
 
     new_tr_fold, val_fold = train_test_split(all_indices[tr_fold], test_size=0.25, random_state=seed)
 
-    print("Train: "+str(len(tr_fold))+" validation: "+str(len(val_fold))+\
+    print("Train: "+str(len(new_tr_fold))+" validation: "+str(len(val_fold))+\
                    " and test set:"+str(len(test_fold)))
 
     XD_train, XT_train, Y_train = drugs[new_tr_fold], proteins[new_tr_fold], Y[new_tr_fold]

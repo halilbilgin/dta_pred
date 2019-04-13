@@ -60,26 +60,23 @@ def load_data(FLAGS):
 
         data['drugs'], data['proteins'], data['Y'] = data['drugs'][shuffled_inds], data['proteins'][shuffled_inds], data['Y'][shuffled_inds]
 
-    if len(dataset_per_task.keys()) == 1:
-        return dataset_per_task[dataset.interaction_type]
-    else:
-        return dataset_per_task
+    return dataset_per_task
 
-def train_multitask_model_v2(datasets, encode_smiles_fn, encode_protein_fn, smi_model,
+def train_multitask_model_v2(datasets, smile_encoding_fn, protein_encoding_fn, smi_model,
                              seq_model, interaction_model, output_path, batch_size,
                              num_epoch=100, fold_id=0, **kwargs):
-    XDinput, encode_smiles = encode_smiles_fn()
-    XTinput, encode_protein = encode_protein_fn()
+
+    XDinput, encoded_smiles = smile_encoding_fn()
+    XTinput, encoded_protein = protein_encoding_fn()
     inputs = [XDinput, XTinput]
     tasks = datasets.keys()
 
-    shared_model = DTIModel(inputs, encode_smiles, encode_protein, smi_model(), seq_model(), interaction_model())
+    shared_model = DTIModel(inputs, encoded_smiles, encoded_protein, smi_model(), seq_model(), interaction_model())
     shared_layers = shared_model.interaction_module
 
     losses = {}
 
     for key, dataset in datasets.items():
-        datasets[key] = train_val_test_split(dataset['drugs'], dataset['proteins'], dataset['Y'], fold_id=fold_id, seed=kwargs['seed'])
 
         if key == 'Kd':
             losses[key] = kwargs['loss']
@@ -114,7 +111,7 @@ def train_multitask_model_v2(datasets, encode_smiles_fn, encode_protein_fn, smi_
 
     multitask_model.train(datasets, checkpoint_callbacks=checkpoint_callbacks, num_epoch=num_epoch, batch_size=batch_size, verbose=2)
 
-    gridmodel = load_model(checkpoint_callbacks['Kd'])
+    gridmodel = load_model(checkpoint_callbacks['Kd'].filepath)
 
     _, _, XD_test, _, _, XT_test, _, _, Y_test = datasets['Kd']
     predicted_labels = gridmodel.predict([np.array(XD_test), np.array(XT_test)])
@@ -126,11 +123,32 @@ def train_multitask_model_v2(datasets, encode_smiles_fn, encode_protein_fn, smi_
             'checkpoint_file': checkpoint_file
         }
 
-def train_model(dataset, encode_smiles_fn, encode_protein_fn, smi_model, seq_model, interaction_model,
-                output_path, optimizer, loss, num_epoch, batch_size, n_repeats=3, **kwargs):
+def train_model(splitting_dataset, smiles_encoding_fn, protein_encoding_fn, smi_model, seq_model, interaction_model,
+                output_path, optimizer, loss, num_epoch, batch_size, n_repeats=3, fold_id=0, **kwargs):
+    """
+
+    :param splitting_dataset:
+    :param smiles_encoding_fn:
+    :param protein_encoding_fn:
+    :param smi_model:
+    :param seq_model:
+    :param interaction_model:
+    :param output_path:
+    :param optimizer:
+    :param loss:
+    :param num_epoch:
+    :param batch_size:
+    :param n_repeats:
+    :param fold_id:
+    :param kwargs:
+    :return:
+    """
+    assert len(splitting_dataset.keys()) == 1
+
+    task = splitting_dataset.keys()[0]
 
     XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, \
-            Y_train, Y_val, Y_test = train_val_test_split(seed=kwargs['seed'], **dataset)
+            Y_train, Y_val, Y_test = splitting_dataset[task]
 
     param_name = str(binascii.b2a_hex(os.urandom(4))).replace("'", '')
     checkpoint_dir = os.path.join(output_path, 'checkpoints')
@@ -148,10 +166,10 @@ def train_model(dataset, encode_smiles_fn, encode_protein_fn, smi_model, seq_mod
         checkpoint_callback = ModelCheckpoint(checkpoint_file, monitor='val_loss', mode='min', verbose=1,
                                               save_best_only=True)
         K.clear_session()
-        XDinput, encode_smiles = encode_smiles_fn()
-        XTinput, encode_protein = encode_protein_fn()
+        XDinput, encoded_smiles = smiles_encoding_fn()
+        XTinput, encoded_protein = protein_encoding_fn()
 
-        model = DTIModel([XDinput, XTinput], encode_smiles, encode_protein, smi_model(), seq_model(), interaction_model())
+        model = DTIModel([XDinput, XTinput], encoded_smiles, encoded_protein, smi_model(), seq_model(), interaction_model())
         compiled_model = model.compile(optimizer=optimizer, loss=loss)
 
         gridres = compiled_model.fit(([XD_train, XT_train]), Y_train, batch_size=batch_size,
@@ -186,23 +204,28 @@ def run_experiment(_run, FLAGS):
 
     data_per_task = load_data(FLAGS)
 
-    encode_smiles = auto_drug_encoding(smi_input_dim=FLAGS.max_smi_len, **vars(FLAGS))
-    encode_protein = auto_protein_encoding(seq_input_dim=FLAGS.max_seq_len, **vars(FLAGS))
+    encoded_smiles = auto_drug_encoding(smi_input_dim=FLAGS.max_smi_len, **vars(FLAGS))
+    encoded_protein = auto_protein_encoding(seq_input_dim=FLAGS.max_seq_len, **vars(FLAGS))
 
     FLAGS.smi_model = auto_model(FLAGS.smi_model, kernel_size=FLAGS.smi_window_length, name='smi_enc', **vars(FLAGS))
     FLAGS.seq_model = auto_model(FLAGS.seq_model, kernel_size=FLAGS.seq_window_length, name='seq_enc', **vars(FLAGS))
     FLAGS.interaction_model = auto_model('fully_connected', name='interaction_fc',
                                          kernel_regularizer=regularizers.l2(FLAGS.l2_regularizer_fc),
                                          **vars(FLAGS))
-
-    if 'drugs' not in data_per_task:
+    if len(data_per_task.keys()) > 1:
         train_fn = train_multitask_model_v2
     else:
         train_fn = train_model
 
+
     results = []
-    for i in range(5):
-        results.append(train_fn(data_per_task, encode_smiles, encode_protein, fold_id=i, **vars(FLAGS)))
+    for fold_id in range(5):
+        splitting_per_task = {}
+
+        for task, dataset in data_per_task.items():
+            splitting_per_task[task] = train_val_test_split(fold_id=fold_id, seed=FLAGS.seed, **dataset)
+
+        results.append(train_fn(splitting_per_task, encoded_smiles, encoded_protein, fold_id=fold_id, **vars(FLAGS)))
         K.clear_session()
 
     mean_dict = {}

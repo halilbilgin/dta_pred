@@ -24,7 +24,7 @@ if __name__=="__main__":
         mongo_conf = FLAGS.mongodb.split(':')
         ex.observers.append(MongoObserver.create(url=':'.join(mongo_conf[:-1]), db_name=mongo_conf[-1]))
 
-    logging(str(FLAGS), FLAGS)
+    logging(str(FLAGS), FLAGS.log_path)
 
     ex.main(run_experiment)
     cfg = vars(FLAGS)
@@ -32,6 +32,7 @@ if __name__=="__main__":
     ex.add_config(cfg)
 
     r = ex.run()
+
 
 #KD-GIP and KP-GS-domain
 #kernels, followed closely by KD-GIP and KP-SW+ k

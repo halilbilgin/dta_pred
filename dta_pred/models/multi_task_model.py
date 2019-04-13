@@ -6,6 +6,7 @@ class MultiTaskModel():
     def __init__(self, inputs, shared_layers, task_specific_layers, tasks):
         self.inputs = inputs
         self.shared_model = shared_layers
+        self.tasks = tasks
 
         self.models = dict()
 
@@ -37,6 +38,6 @@ class MultiTaskModel():
             for task in self.tasks:
                 XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = datasets[task]
 
-                gridres = self.models[task].fit(([XD_train, XT_train]), Y_train, batch_size=batch_size, epochs=1,
+                gridres = self.compiled_models[task].fit(([XD_train, XT_train]), Y_train, batch_size=batch_size, epochs=1,
                                            validation_data=(([np.array(XD_val), np.array(XT_val)]), np.array(Y_val)),
                                            callbacks=[checkpoint_callbacks[task]], **kwargs)
