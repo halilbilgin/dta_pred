@@ -251,16 +251,16 @@ def prepare_interaction_pairs(XD, XT,  Y, rows, cols):
 
     for pair_ind in range(len(rows)):
         drug = XD[rows[pair_ind]]
-        drugs.append(drug)
+        drugs.append(np.array(drug))
 
         target=XT[cols[pair_ind]]
-        targets.append(target)
+        targets.append(np.array(target))
 
         affinity.append(Y[rows[pair_ind],cols[pair_ind]])
 
-    drug_data = np.asarray(np.stack(drugs))
-    target_data = np.asarray(np.stack(targets))
+    #drug_data = np.asarray(np.stack(drugs))
+    #target_data = np.asarray(np.stack(targets))
 
-    assert drug_data.shape[0] == target_data.shape[0] and target_data.shape[0] == len(affinity)
+    #assert drug_data.shape[0] == target_data.shape[0] and target_data.shape[0] == len(affinity)
 
-    return drug_data,target_data,  affinity
+    return drugs, targets, affinity
