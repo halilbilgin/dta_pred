@@ -40,9 +40,11 @@ def load_data(FLAGS):
             dataset_per_task[dataset.interaction_type] = {'drugs': [[]], 'proteins': [[]], 'Y': []}
 
         if dataset.interaction_type in ['Kd']:
+            Y = np.asarray(Y)
             Y[Y<=0] = 1
             Y = -np.log10((np.asarray(Y))/1e9)
         elif dataset.interaction_type in ['IC50']:
+            Y = np.asarray(Y)
             Y[Y<=0] = 1
             Y = -np.log10((np.asarray(Y))/1e9)
 
@@ -93,7 +95,7 @@ def train_multitask_model_v2(datasets, smile_encoding_fn, protein_encoding_fn, s
         kwargs['n_fc_neurons'] = int(kwargs['n_fc_neurons'] / 4)
         task_specific_layers[task] = fully_connected_model(name=task+'_fc', **kwargs)
 
-    multitask_model = MultiTaskModel(inputs, shared_layers, task_specific_layers, tasks)
+    multitask_model = MultiTaskModelV2(inputs, shared_layers, task_specific_layers, tasks)
 
     multitask_model.compile(optimizers=kwargs['optimizer'], losses=losses)
 
