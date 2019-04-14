@@ -72,7 +72,7 @@ def label_sequence(line, MAX_SEQ_LEN, aminoacid_to_integer):
     """
     Convert aminoacid sequence into a vector of integers
 
-    :param smiles_string: SMILES string
+    :param line: Aminoacid sequence
     :param MAX_SEQ_LEN: length of the encoded vector. If aminoacid sequence length is less than this, zero padding will
     be applied, if it is greater, then string will be clipped.
     :param aminoacid_to_integer: A dictionary to encode each letter in the SMILES string to an integer value
@@ -85,9 +85,6 @@ def label_sequence(line, MAX_SEQ_LEN, aminoacid_to_integer):
         X = np.zeros(MAX_SEQ_LEN)
 
     for i, ch in enumerate(line[:MAX_SEQ_LEN]):
-        if ch == '\n':
-            continue
-
         X[i] = aminoacid_to_integer[ch]
 
     return X #.tolist()
@@ -168,38 +165,51 @@ class DataSet(object):
         if with_label:
             dtc_train = pd.DataFrame()
             for file in glob.glob(path.join(self.fpath,'train*')):
-                dtc_train = pd.concat((dtc_train, pd.read_csv(path.join(self.fpath, file))), axis=0)
+                dtc_train = pd.concat((dtc_train, pd.read_csv(file)), axis=0, ignore_index=True)
         else:
+            dtc_train = pd.DataFrame()
             for file in glob.glob(path.join(self.fpath,'test*')):
-                dtc_train = pd.concat((dtc_train, pd.read_csv(path.join(self.fpath, file))), axis=0)
+                dtc_train = pd.concat((dtc_train, pd.read_csv(file)), axis=0, ignore_index=True)
 
         for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
             dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
-
         n_samples = dtc_train['smiles'].shape[0]
 
         XD, XT = [1 for i in range(n_samples)], [1 for i in range(n_samples)]
 
-        XD_processed = self.process_ligands(dtc_train['smiles'].unique())
+        XD_processed = self.process_ligands(np.asarray(dtc_train['smiles'].unique().tolist()))
+        indices_by_smiles = {}
+        for ind, smiles in enumerate(dtc_train['smiles'].tolist()):
+            if smiles not in indices_by_smiles:
+                indices_by_smiles[smiles] = []
 
-        for i, smiles in enumerate(dtc_train['smiles'].unique()):
-            indices = np.where(dtc_train['smiles'] == smiles)[0]
+            indices_by_smiles[smiles].append(ind)
+
+        for i, smiles in enumerate(np.asarray(dtc_train['smiles'].unique().tolist())):
+            indices = indices_by_smiles[smiles]
 
             for ind in indices:
                 XD[ind] = XD_processed[i]
 
-        XT_processed = self.process_proteins(dtc_train['hhmake' if self.protein_format =='pssm' else 'fasta'].unique())
+        XT_processed = self.process_proteins(np.asarray(dtc_train['fasta'].unique().tolist()))
+        indices_by_fasta = {}
+        for ind, fasta in enumerate(dtc_train['fasta'].tolist()):
+            if fasta not in indices_by_fasta:
+                indices_by_fasta[fasta] = []
 
-        for i, fasta_seq in enumerate(dtc_train['fasta'].unique()):
-            indices = np.where(dtc_train['fasta'] == fasta_seq)[0]
+            indices_by_fasta[fasta].append(ind)
 
+        for i, fasta_seq in enumerate(dtc_train['fasta'].unique().tolist()):
+            indices = indices_by_fasta[fasta_seq]
             for ind in indices:
                 XT[ind] = XT_processed[i]
 
         assert len(XD) == len(XT) and len(XT) == dtc_train['smiles'].shape[0]
+        assert np.asarray(XT).shape[1] == self.SEQLEN
+        assert np.asarray(XD).shape[1] == self.SMILEN
 
         if with_label:
-            return XD, XT, dtc_train['value'].values
+            return XD, XT, dtc_train['standard_value'].values
         else:
             return XD, XT
 

@@ -220,4 +220,6 @@ def logging(msg, log_path):
     fpath = os.path.join( log_path, "log.txt" )
     with open( fpath, "a" ) as fw:
         fw.write("%s\n" % msg)
+        print(msg)
+
     #print(msg)

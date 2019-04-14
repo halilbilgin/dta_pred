@@ -35,12 +35,14 @@ def load_data(FLAGS):
                        biovec_model_path=FLAGS.biovec_model_path
                        )
         XD, XT, Y = dataset.parse_data()
-
+        print(dataset_name)
         if dataset.interaction_type not in dataset_per_task:
-            dataset_per_task[dataset.interaction_type] = {'drugs': None, 'proteins': None, 'Y': None}
+            dataset_per_task[dataset.interaction_type] = {'drugs': [[]], 'proteins': [[]], 'Y': []}
 
-        if dataset.interaction_type == 'Kd':
-            Y = -np.log10(np.asarray(Y)/1e9)
+        if dataset.interaction_type in ['Kd']:
+            Y = -np.log10((np.asarray(Y))/1e9+1e-9)
+        elif dataset.interaction_type in ['IC50']:
+            Y = -np.log10((np.asarray(Y))/1e20+1e-20)
 
         data_dict = dataset_per_task[dataset.interaction_type]
 
@@ -48,6 +50,7 @@ def load_data(FLAGS):
             data_dict['drugs'], data_dict['proteins'], data_dict['Y']= np.asarray(XD), np.asarray(XT), np.asarray(Y)
         else:
             data_dict['drugs'] = np.concatenate((np.asarray(data_dict['drugs']), np.asarray(XD)), axis=0)
+
             data_dict['proteins'] = np.concatenate((np.asarray(data_dict['proteins']), np.asarray(XT)), axis=0)
             data_dict['Y'] = np.concatenate((np.asarray(data_dict['Y']), np.asarray(Y)), axis=0)
 
@@ -200,9 +203,12 @@ def train_model(splitting_dataset, smiles_encoding_fn, protein_encoding_fn, smi_
     return results[best_rmse_ind]
 
 def run_experiment(_run, FLAGS):
-    FLAGS = Namespace(**vars(FLAGS))
+    log_path = os.path.join(FLAGS.output_path, 'logs')
 
+    FLAGS = Namespace(**vars(FLAGS))
+    logging("Data is loading", log_path=log_path)
     data_per_task = load_data(FLAGS)
+    logging("Data is loaded", log_path=log_path)
 
     encoded_smiles = auto_drug_encoding(smi_input_dim=FLAGS.max_smi_len, **vars(FLAGS))
     encoded_protein = auto_protein_encoding(seq_input_dim=FLAGS.max_seq_len, **vars(FLAGS))
@@ -219,18 +225,23 @@ def run_experiment(_run, FLAGS):
 
 
     results = []
+    logging("Folds are being created", log_path=log_path)
     for fold_id in range(5):
         splitting_per_task = {}
 
         for task, dataset in data_per_task.items():
-            splitting_per_task[task] = train_val_test_split(fold_id=fold_id, seed=FLAGS.seed, **dataset)
+            splitting_per_task[task] = train_val_test_split(fold_id=fold_id, seed=FLAGS.seed,
+                                                            val_size=0.2 if task=='Kd' else 0.1,
+                                                            n_splits=10 if task=='Kd' else 20,
+                                                            **dataset)
 
         results.append(train_fn(splitting_per_task, encoded_smiles, encoded_protein, fold_id=fold_id, **vars(FLAGS)))
         K.clear_session()
+    logging("Folds are created", log_path=log_path)
 
     mean_dict = {}
     std_dict = {}
-    print(results)
+
 
     for key in results[0].keys():
         if 'test' not in key:
@@ -241,7 +252,6 @@ def run_experiment(_run, FLAGS):
         mean_dict[key] = np.mean(cur_result)
         std_dict[key] = np.std(cur_result)
 
-    log_path = os.path.join(FLAGS.output_path, 'logs')
     logging('---BEST RUN test results---', log_path=log_path)
 
     for metric in mean_dict.keys():

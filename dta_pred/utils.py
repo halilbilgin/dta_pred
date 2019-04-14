@@ -51,7 +51,7 @@ def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
 
-def get_n_folds(all_drugs, n_splits=5, seed=42):
+def get_n_folds(all_drugs, n_splits=10, seed=42):
     test_folds = np.ones(all_drugs.shape[0])
     kf = KFold(n_splits, random_state=seed)
 
@@ -80,13 +80,13 @@ def get_n_fold_by_drugs(all_drugs, n_splits=5):
 
     return PredefinedSplit(test_folds)
 
-def train_val_test_split(drugs, proteins, Y, fold_id=0, seed=42):
+def train_val_test_split(drugs, proteins, Y, fold_id=0, seed=42, val_size=0.2, n_splits=10 ):
 
     all_indices = np.arange(0, drugs.shape[0])
 
-    tr_fold, test_fold = list(get_n_folds(all_indices, seed=seed).split())[fold_id]
+    tr_fold, test_fold = list(get_n_folds(all_indices, seed=seed, n_splits=n_splits).split())[fold_id]
 
-    new_tr_fold, val_fold = train_test_split(all_indices[tr_fold], test_size=0.25, random_state=seed)
+    new_tr_fold, val_fold = train_test_split(all_indices[tr_fold], test_size=val_size, random_state=seed)
 
     print("Train: "+str(len(new_tr_fold))+" validation: "+str(len(val_fold))+\
                    " and test set:"+str(len(test_fold)))
