@@ -40,9 +40,11 @@ def load_data(FLAGS):
             dataset_per_task[dataset.interaction_type] = {'drugs': [[]], 'proteins': [[]], 'Y': []}
 
         if dataset.interaction_type in ['Kd']:
-            Y = -np.log10((np.asarray(Y))/1e9+1e-9)
+            Y[Y<=0] = 1
+            Y = -np.log10((np.asarray(Y))/1e9)
         elif dataset.interaction_type in ['IC50']:
-            Y = -np.log10((np.asarray(Y))/1e20+1e-20)
+            Y[Y<=0] = 1
+            Y = -np.log10((np.asarray(Y))/1e9)
 
         data_dict = dataset_per_task[dataset.interaction_type]
 
