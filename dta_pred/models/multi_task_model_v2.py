@@ -9,9 +9,11 @@ class DataGenerator(keras.utils.Sequence):
     def __init__(self, datasets, y, batch_size=32, shuffle=True):
         'Initialization'
         self.batch_size = batch_size
-        self.y = y
+        self.y = np.asarray(y)
         self.shuffle = shuffle
-        self.datasets =datasets
+        self.datasets = datasets
+        for i, dataset in enumerate(self.datasets):
+            self.datasets[i] = np.asarray(dataset)
         self.on_epoch_end()
 
     def __len__(self):
@@ -20,34 +22,36 @@ class DataGenerator(keras.utils.Sequence):
 
     def __getitem__(self, index):
         'Generate one batch of data'
-        # Generate indexes of the batch
-        indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
-
-        # Generate data
-        X, y = self.__data_generation(indexes)
+        X, y = self.__data_generation(index)
 
         return X, y
 
     def on_epoch_end(self):
         'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.datasets[0]))
+        self.indexes = np.arange(self.datasets[0].shape[0])
         if self.shuffle == True:
             np.random.shuffle(self.indexes)
-
-    def __data_generation(self, indexes):
+        shuffled_datasets = []
+        for dataset in self.datasets:
+            shuffled_datasets.append(dataset[self.indexes])
+        
+        self.datasets = shuffled_datasets
+        
+        self.y = self.y[self.indexes]
+        
+    def __data_generation(self, index):
         'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
         # Initialization
         all_X = []
-        y = np.empty((self.batch_size))
+
         for dataset in self.datasets:
-            X = np.empty((self.batch_size, dataset.shape[1]))
-            for i, ind in enumerate(indexes):
-                X[i,] = dataset[ind]
-                y[i] = self.y[ind]
+            X = dataset[index*self.batch_size:(index+1)*self.batch_size]
             all_X.append(X)
+    
+        y = self.y[index*self.batch_size:(index+1)*self.batch_size]
         
         return all_X, y
-    
+
 class MultiTaskModelV2():
     def __init__(self, inputs, shared_layers, task_specific_layers, tasks):
         self.inputs = inputs
@@ -85,7 +89,7 @@ class MultiTaskModelV2():
         
         for task, dataset in datasets.items():
             XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = datasets[task]
-            data_generators[task] = DataGenerator((XD_train, XT_train), Y_train, batch_size)
+            data_generators[task] = DataGenerator([XD_train, XT_train], Y_train, batch_size)
             checkpoint_callbacks[task].set_model(self.compiled_models[task])
         
         for cur_epoch in range(num_epoch):
