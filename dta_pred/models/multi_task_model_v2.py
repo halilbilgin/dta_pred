@@ -92,14 +92,14 @@ class MultiTaskModelV2():
 
             for task, callback in checkpoint_callbacks.items():
                 callback.on_epoch_begin(cur_epoch)
-        
-            for i in range(int(datasets['Kd'][0].shape[0]/batch_size)):
+            number_of_steps = int(datasets['Kd'][0].shape[0]/batch_size)
+            number_of_steps = 1
+            for i in range(number_of_steps):
                 for task, callback in checkpoint_callbacks.items():
                     callback.on_batch_begin(i)
         
                 task = self.tasks[math.floor(np.random.uniform(0,len(self.tasks)))]
                 X, y = data_generators[task][i]
-
                 gridres = self.compiled_models[task].train_on_batch(X, y)
                 
                 for task, callback in checkpoint_callbacks.items():
