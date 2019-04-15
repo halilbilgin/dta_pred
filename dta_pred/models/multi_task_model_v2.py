@@ -93,6 +93,6 @@ class MultiTaskModelV2():
                 gridres = self.compiled_models[task].train_on_batch(X, y)
             for task, callback in checkpoint_callbacks.items():
                 callback.on_epoch_end(cur_epoch)
-            for task, dataset_generator in dataset_generators.items():
-                dataset_generator.on_epoch_end()
+            for task, data_generator in data_generators.items():
+                data_generator.on_epoch_end()
                 
