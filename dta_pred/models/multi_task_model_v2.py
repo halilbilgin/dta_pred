@@ -93,7 +93,7 @@ class MultiTaskModelV2():
             for task, callback in checkpoint_callbacks.items():
                 callback.on_epoch_begin(cur_epoch)
             number_of_steps = int(datasets['Kd'][0].shape[0]/batch_size)
-            number_of_steps = 1
+            
             for i in range(number_of_steps):
                 for task, callback in checkpoint_callbacks.items():
                     callback.on_batch_begin(i)
@@ -107,14 +107,11 @@ class MultiTaskModelV2():
             
             for task, dataset in datasets.items():
                 XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = dataset
-                self.compiled_models[task].test_on_batch(([XD_val, XT_val]), Y_val)
-             
+                self.compiled_models[task].test_on_batch(([XD_val[:1000], XT_val[:1000]]), Y_val[:1000])
+            
             for task, callback in checkpoint_callbacks.items():
                 callback.on_epoch_end(cur_epoch)
             
             for task, data_generator in data_generators.items():
                 data_generator.on_epoch_end()
-                
-              
-                
                 
