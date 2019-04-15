@@ -80,19 +80,41 @@ class MultiTaskModelV2():
         return self.compiled_models
 
     def train(self, datasets, checkpoint_callbacks, num_epoch, batch_size, **kwargs):
+        
         data_generators = {}
+        
         for task, dataset in datasets.items():
             XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = datasets[task]
             data_generators[task] = DataGenerator((XD_train, XT_train), Y_train, batch_size)
         
         for cur_epoch in range(num_epoch):
+            print("Epoch", cur_epoch)
+
+            for task, callback in checkpoint_callbacks.items():
+                callback.on_epoch_begin(cur_epoch)
+        
             for i in range(int(datasets['Kd'][0].shape[0]/batch_size)):
+                for task, callback in checkpoint_callbacks.items():
+                    callback.on_batch_begin(i)
+        
                 task = self.tasks[math.floor(np.random.uniform(0,len(self.tasks)))]
                 X, y = data_generators[task][i]
 
                 gridres = self.compiled_models[task].train_on_batch(X, y)
+                
+                for task, callback in checkpoint_callbacks.items():
+                    callback.on_batch_end(i)
+            
+            for task, dataset in datasets.items():
+                XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = dataset
+                self.compiled_models[task].test_on_batch(([XD_val, XT_val]), Y_val)
+             
             for task, callback in checkpoint_callbacks.items():
                 callback.on_epoch_end(cur_epoch)
+            
             for task, data_generator in data_generators.items():
                 data_generator.on_epoch_end()
+                
+              
+                
                 

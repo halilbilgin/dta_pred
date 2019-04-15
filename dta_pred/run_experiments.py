@@ -131,7 +131,7 @@ def train_multitask_model_v2(datasets, smile_encoding_fn, protein_encoding_fn, s
         }
 
 def train_model(splitting_dataset, smiles_encoding_fn, protein_encoding_fn, smi_model, seq_model, interaction_model,
-                output_path, optimizer, loss, num_epoch, batch_size, n_repeats=3, fold_id=0, **kwargs):
+                output_path, optimizer, loss, f, batch_size, n_repeats=3, fold_id=0, **kwargs):
     """
 
     :param splitting_dataset:
