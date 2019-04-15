@@ -86,6 +86,7 @@ class MultiTaskModelV2():
         for task, dataset in datasets.items():
             XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = datasets[task]
             data_generators[task] = DataGenerator((XD_train, XT_train), Y_train, batch_size)
+            checkpoint_callbacks[task].set_model(self.compiled_models[task])
         
         for cur_epoch in range(num_epoch):
             print("Epoch", cur_epoch)
@@ -105,12 +106,15 @@ class MultiTaskModelV2():
                 for task, callback in checkpoint_callbacks.items():
                     callback.on_batch_end(i)
             
+            results_per_epoch = {}
             for task, dataset in datasets.items():
                 XD_train, XD_val, XD_test, XT_train, XT_val, XT_test, Y_train, Y_val, Y_test = dataset
-                self.compiled_models[task].test_on_batch(([XD_val[:1000], XT_val[:1000]]), Y_val[:1000])
+                res = self.compiled_models[task].test_on_batch(([XD_val[:1000], XT_val[:1000]]), Y_val[:1000])
+                results_per_epoch[task] = {'val_'+self.compiled_models[task].metrics_names[i]:score
+                                           for i, score in enumerate(res)}
             
             for task, callback in checkpoint_callbacks.items():
-                callback.on_epoch_end(cur_epoch)
+                callback.on_epoch_end(cur_epoch, results_per_epoch[task])
             
             for task, data_generator in data_generators.items():
                 data_generator.on_epoch_end()
