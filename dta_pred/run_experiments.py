@@ -76,7 +76,7 @@ def train_multitask_model_v2(datasets, smile_encoding_fn, protein_encoding_fn, s
     XDinput, encoded_smiles = smile_encoding_fn()
     XTinput, encoded_protein = protein_encoding_fn()
     inputs = [XDinput, XTinput]
-    tasks = datasets.keys()
+    tasks = list(datasets.keys())
 
     shared_model = DTIModel(inputs, encoded_smiles, encoded_protein, smi_model(), seq_model(), interaction_model())
     shared_layers = shared_model.interaction_module
