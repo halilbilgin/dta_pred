@@ -139,7 +139,7 @@ def argparser():
         '--datasets_included',
         type=str,
         nargs='+',
-        default=['davis', 'dtc_KD', 'dtc_IC50', 'kiba'],
+        default=['davis', 'dtc_KD', 'dtc_IC50', 'dtc_KI', 'kiba'],
         help='Directory for input data.'
     )
     parser.add_argument(

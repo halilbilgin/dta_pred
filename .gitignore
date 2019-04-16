@@ -107,3 +107,6 @@ output/
 dta_pred/*.ipynb
 logs/
 .idea/
+*.out
+*.swp
+opt/
