@@ -38,16 +38,17 @@ def load_data(FLAGS):
         print(dataset_name)
         if dataset.interaction_type not in dataset_per_task:
             dataset_per_task[dataset.interaction_type] = {'drugs': [[]], 'proteins': [[]], 'Y': []}
-
-        if dataset.interaction_type in ['Kd']:
-            Y = np.asarray(Y)
+        Y = np.asarray(Y)
+        
+        if dataset.interaction_type in ['Kd']:    
             Y[Y<=0] = 1
             Y = -np.log10((np.asarray(Y))/1e9)
         elif dataset.interaction_type in ['IC50']:
-            Y = np.asarray(Y)
             Y[Y<=0] = 1
             Y = -np.log10((np.asarray(Y))/1e9)
-
+        elif dataset.interaction_type == 'Ki':
+            Y = (Y - np.mean(Y))/np.std(Y)
+        
         data_dict = dataset_per_task[dataset.interaction_type]
 
         if type(data_dict['drugs']) is not np.ndarray:
