@@ -47,7 +47,7 @@ def load_data(FLAGS):
             Y[Y<=0] = 1
             Y = -np.log10((np.asarray(Y))/1e9)
         elif dataset.interaction_type == 'Ki':
-            Y = (Y - np.mean(Y))/np.std(Y)
+            Y = -np.log10(((Y + np.abs(np.min(Y))+1))/1e9)
         
         data_dict = dataset_per_task[dataset.interaction_type]
 
