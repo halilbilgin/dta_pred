@@ -15,7 +15,7 @@ class MultiTaskModel():
             output = Dense(1, kernel_initializer='normal')(model)
             self.models[task_name] = output
 
-    def compile(self, optimizers, losses, metrics=['mean_absolute_error']):
+    def compile(self, optimizers, losses, metrics=['spearmanr_corr']):
         if type(optimizers) is not dict:
             optimizers = {key:optimizers for key in self.models.keys()}
 

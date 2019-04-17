@@ -65,7 +65,7 @@ class MultiTaskModelV2():
             output = Dense(1, kernel_initializer='normal')(model)
             self.models[task_name] = output
 
-    def compile(self, optimizers, losses, metrics=['mean_absolute_error']):
+    def compile(self, optimizers, losses, metrics=['spearmanr_corr']):
         if type(optimizers) is not dict:
             optimizers = {key:optimizers for key in self.models.keys()}
 
@@ -116,7 +116,7 @@ class MultiTaskModelV2():
                 res = self.compiled_models[task].test_on_batch(([XD_val[:1000], XT_val[:1000]]), Y_val[:1000])
                 results_per_epoch[task] = {'val_'+self.compiled_models[task].metrics_names[i]:score
                                            for i, score in enumerate(res)}
-            
+            print(results_per_epoch['Kd'])
             for task, callback in checkpoint_callbacks.items():
                 callback.on_epoch_end(cur_epoch, results_per_epoch[task])
             

@@ -3,14 +3,13 @@ from keras.layers.normalization import BatchNormalization
 from keras.layers import concatenate
 from keras.models import Model
 import tensorflow as tf
-from dta_pred.metrics import cindex, f1
+from dta_pred.metrics import cindex, f1, spearmanr_corr
 import keras.metrics
 keras.metrics.cindex = cindex
 keras.metrics.f1 = f1
+keras.metrics.spearmanr_corr = spearmanr_corr
 from keras import regularizers
-
 from keras import backend as K
-
 from dta_pred import CHARISOSMILEN, CHARPROTLEN
 
 def simple_cnn_encoder(n_cnn_layers, num_windows, kernel_size, name, **kwargs):

@@ -127,7 +127,8 @@ def train_multitask_model_v2(datasets, smile_encoding_fn, protein_encoding_fn, s
             'test_loss': mean_squared_error(Y_test, predicted_labels),
             'test_cindex': get_cindex(Y_test, predicted_labels),
             'test_rmse': np.sqrt(mean_squared_error(Y_test, predicted_labels)),
-            'test_f1': f1_score(Y_test > kwargs['binary_th'], predicted_labels > kwargs['binary_th']),
+            #'test_f1': f1_score(Y_test > kwargs['binary_th'], predicted_labels > kwargs['binary_th']),
+            'test_spearmanr': spearmanr(Y_test, predicted_labels),
             'checkpoint_file': checkpoint_file
         }
 
