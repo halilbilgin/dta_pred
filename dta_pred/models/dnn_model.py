@@ -69,7 +69,7 @@ def fully_connected_model(n_fc_layers, n_fc_neurons, dropout, name='fc',
 
 def crossentropy_mse_combined(y_true, y_pred):
     loss = keras.losses.mean_squared_error(y_true, y_pred)
-    loss += keras.losses.binary_crossentropy(tf.dtypes.cast(y_true>7, tf.float32),
+    loss += keras.losses.binary_crossentropy(tf.cast(y_true>7, tf.float32),
                                              keras.activations.sigmoid(y_pred-7))
 
     return loss
