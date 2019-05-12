@@ -149,7 +149,6 @@ dependencies:
     - biovec==0.2.4
     - bz2file==0.98
     - docopt==0.6.2
-    - dta-pred==0.4
     - gast==0.2.0
     - grpcio==1.17.1
     - h5py==2.8.0
@@ -160,7 +159,7 @@ dependencies:
     - keras-applications==1.0.6
     - keras-preprocessing==1.0.5
     - markdown==3.0.1
-    - mol2vec==0.1
+    - git+https://github.com/samoturk/mol2vec
     - munch==2.3.2
     - protobuf==3.6.1
     - py-cpuinfo==4.0.0
