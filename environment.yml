@@ -172,6 +172,4 @@ dependencies:
     - tensorboard==1.12.1
     - tensorflow-gpu==1.12.0
     - termcolor==1.1.0
-    - werkzeug==0.14.1
-    - wrapt==1.10.11
 prefix: /cta/users/hbilgin/.conda/envs/dta_pred
