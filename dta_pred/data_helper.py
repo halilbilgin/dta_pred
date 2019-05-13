@@ -9,8 +9,9 @@ from os import path
 import sys
 import glob
 from sklearn.model_selection import KFold, PredefinedSplit, train_test_split
-#from keras.preprocessing.sequence import pad_sequences
-
+import urllib.request
+import re
+from tqdm import tqdm
 
 ## ######################## ##
 #
@@ -38,6 +39,40 @@ CHARISOSMISET = {"#": 29, "%": 30, ")": 31, "(": 1, "+": 32, "-": 33, "/": 34, "
 
 CHARISOSMILEN = 64
 
+def get_kinase_domains(dataset):
+    target_ids = dataset['UniProt_Id'].unique()
+    dataset.loc[:, 'fasta'] = ''
+
+    for target_id in tqdm(target_ids):
+        url = 'https://www.uniprot.org/uniprot/' + target_id + '.txt'
+        raw_data = urllib.request.urlopen(url).read().decode("utf-8")
+        kinase_domain = re.search(r"\nFT([\t ]+)DOMAIN([\t ]+)([0-9]+)([\t ]+)([0-9]+)([\t ]+)Protein kinase", raw_data)
+        if kinase_domain is not None:
+            kinase_domain = kinase_domain.groups()
+            kinase_domain = kinase_domain[2], kinase_domain[4]
+
+        raw_blast = ""
+        i = 1
+        while (raw_blast == "" and i < 5):
+            if (i > 1):
+                time.sleep(0.2)
+
+            url = 'https://www.uniprot.org/blast/?about=' + target_id
+
+            if kinase_domain is not None:
+                url += '[' + kinase_domain[0] + '-' + kinase_domain[1] + ']&key=Domain'
+
+            raw_blast = urllib.request.urlopen(url).read().decode("utf-8")
+            i = i + 1
+
+        fasta_sequence = ''.join(
+            re.search(r'sequence-textarea">(.*?)\n(([^<]*?))</textarea>', raw_blast).groups()[1]).replace('\n', '')
+        if kinase_domain is not None:
+            assert len(fasta_sequence) == int(kinase_domain[1]) - int(kinase_domain[0]) + 1
+
+        dataset.loc[dataset['UniProt_Id'] == target_id, 'fasta'] = fasta_sequence
+
+    return dataset
 
 ## ######################## ##
 #
@@ -113,7 +148,6 @@ class DataSet(object):
         self.charseqset_size = CHARPROTLEN
         self.dataset_path = dataset_path
         self.fpath = path.join(dataset_path, dataset_name)
-
         self.charsmiset = CHARISOSMISET ###HERE CAN BE EDITED
         self.charsmiset_size = CHARISOSMILEN
         self.protein_format = protein_format
@@ -171,8 +205,11 @@ class DataSet(object):
             for file in glob.glob(path.join(self.fpath,'test*')):
                 dtc_train = pd.concat((dtc_train, pd.read_csv(file)), axis=0, ignore_index=True)
 
+        dtc_train.columns = ['smiles' if col == 'Compound_SMILES' else col for col in dtc_train.columns]
+
         for ind in dtc_train[dtc_train['smiles'].str.contains('\n')].index:
             dtc_train.loc[ind, 'smiles'] = dtc_train.loc[ind, 'smiles'].split('\n')[0]
+
         n_samples = dtc_train['smiles'].shape[0]
 
         XD, XT = [1 for i in range(n_samples)], [1 for i in range(n_samples)]
@@ -190,6 +227,9 @@ class DataSet(object):
 
             for ind in indices:
                 XD[ind] = XD_processed[i]
+
+        if 'fasta' not in dtc_train.columns:
+            dtc_train = get_kinase_domains(dtc_train)
 
         XT_processed = self.process_proteins(np.asarray(dtc_train['fasta'].unique().tolist()))
         indices_by_fasta = {}
