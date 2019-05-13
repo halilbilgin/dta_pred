@@ -12,7 +12,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '--output_filename',
+        '--output_file',
         type=str,
         help='Name of the CSV file'
     )
@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     Y_pred = model.predict([np.asarray(XD), np.asarray(XT)])
 
-    data_csv = pd.read_csv(path.join('data/leaderboards/round2/template.csv'))
+    data_csv = pd.read_csv(args.input_file)
     data_csv.loc[:, 'pKd_[M]_pred'] = Y_pred
 
-    data_csv.to_csv(FLAGS.output_filename, index=False)
+    data_csv.to_csv(FLAGS.output_file, index=False)
