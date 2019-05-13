@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     Y_pred = model.predict([np.asarray(XD), np.asarray(XT)])
 
-    data_csv = pd.read_csv(args.input_file)
+    data_csv = pd.read_csv(FLAGS.input_file)
     data_csv.loc[:, 'pKd_[M]_pred'] = Y_pred
 
     data_csv.to_csv(FLAGS.output_file, index=False)
