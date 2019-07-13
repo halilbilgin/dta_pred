@@ -16,6 +16,13 @@ if __name__ == '__main__':
         type=str,
         help='Name of the CSV file'
     )
+
+    parser.add_argument(
+        '--input_file',
+        type=str,
+        help='Name of the CSV file'
+    )
+
     parser.add_argument(
         '--input_file',
         type=str,
@@ -24,7 +31,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--arguments',
-        type=json.loads,
+        type=str,
         help='Arguments to train the model'
     )
     parser.add_argument(
@@ -34,7 +41,10 @@ if __name__ == '__main__':
     )
 
     FLAGS, _ = parser.parse_known_args()
+    FLAGS.arguments = json.loads(FLAGS.arguments.replace("'", '"'))
     args = argparse.Namespace(**FLAGS.arguments)
+
+
 
     if FLAGS.model_file is not None:
         model = load_model(FLAGS.model_file)
