@@ -4,7 +4,7 @@ from dta_pred import DataSet
 import numpy as np
 import pandas as pd
 from os import path
-
+import shutil
 import json
 from dta_pred import argparser, run_experiment, makedirs, logging
 import os
@@ -12,10 +12,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '--output_filename',
+        '--output_file',
         type=str,
         help='Name of the CSV file'
     )
+    parser.add_argument(
+        '--input_file',
+        type=str,
+        help='Name of the CSV file'
+    )
+
     parser.add_argument(
         '--arguments',
         type=json.loads,
@@ -41,9 +47,14 @@ if __name__ == '__main__':
         result = run_experiment({}, args)
         model = load_model(result['checkpoint_files']['Kd'])
 
+    prediction_folder = 'data/prediction'
+    makedirs(prediction_folder)
 
+    shutil.copy(FLAGS.input_file, os.path.join(prediction_folder,'test.csv'))
+    with open(os.path.join(prediction_folder, 'type.txt'), 'w') as f:
+        f.write('Kd')
 
-    data = DataSet('data/leaderboards', 'round2/', args.max_seq_len, args.max_smi_len,
+    data = DataSet(prediction_folder, '', args.max_seq_len, args.max_smi_len,
                        args.protein_format, args.drug_format, args.mol2vec_model_path,
                     args.mol2vec_radius, args.biovec_model_path)
 
@@ -51,7 +62,7 @@ if __name__ == '__main__':
 
     Y_pred = model.predict([np.asarray(XD), np.asarray(XT)])
 
-    data_csv = pd.read_csv(path.join('data/leaderboards/round2/template.csv'))
+    data_csv = pd.read_csv(FLAGS.input_file)
     data_csv.loc[:, 'pKd_[M]_pred'] = Y_pred
 
-    data_csv.to_csv(FLAGS.output_filename, index=False)
+    data_csv.to_csv(FLAGS.output_file, index=False)

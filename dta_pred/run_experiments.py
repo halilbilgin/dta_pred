@@ -229,7 +229,6 @@ def run_experiment(_run, FLAGS):
     else:
         train_fn = train_model
 
-
     results = []
     logging("Folds are being created", log_path=log_path)
     for fold_id in range(5):

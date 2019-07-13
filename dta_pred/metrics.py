@@ -20,8 +20,9 @@ def cindex(y_true, y_pred):
     return tf.where(tf.equal(g, 0), 0.0, g/f) #select
 
 def spearmanr_corr(y_true, y_pred):
-     return ( tf.py_function(spearmanr, [tf.cast(y_pred, tf.float32), 
-                       tf.cast(y_true, tf.float32)], Tout = tf.float32) )
+     #return ( tf.py_function(spearmanr, [tf.cast(y_pred, tf.float32),
+     #                  tf.cast(y_true, tf.float32)], Tout = tf.float32) )
+     return cindex(y_true, y_pred)
 
 def f1(y_true, y_pred):
     def recall(y_true, y_pred):
