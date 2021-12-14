@@ -1,9 +1,18 @@
 from dta_pred.models.dnn_model import *
 
-class DTIModel():
+
+class DTIModel:
     """Drug Target Interaction Model"""
-    def __init__(self, inputs, encoded_smiles, encoded_protein, smi_layers, seq_layers,
-                 interaction_model):
+
+    def __init__(
+        self,
+        inputs,
+        encoded_smiles,
+        encoded_protein,
+        smi_layers,
+        seq_layers,
+        interaction_model,
+    ):
         """
         The constructor takes encoded smiles and proteins, as well as the smiles, protein and interaction layers
         then creates a drug target interaction model with a single output that returns the interaction property(e.g.
@@ -27,13 +36,17 @@ class DTIModel():
         self.seq_module = seq_layers(encoded_protein)
         self.seq_module = GlobalMaxPooling1D()(self.seq_module)
 
-        self.encode_interaction = concatenate([self.smi_module, self.seq_module], name='encode_interaction', axis=-1)
+        self.encode_interaction = concatenate(
+            [self.smi_module, self.seq_module], name="encode_interaction", axis=-1
+        )
 
         self.interaction_module = interaction_model(self.encode_interaction)
 
-        self.output = Dense(1, kernel_initializer='normal')(self.interaction_module)
+        self.output = Dense(1, kernel_initializer="normal")(self.interaction_module)
 
-    def compile(self, optimizer='adam', loss='mean_squared_error', metrics=[cindex, f1]):
+    def compile(
+        self, optimizer="adam", loss="mean_squared_error", metrics=[cindex, f1]
+    ):
         """
         Compiles and returns the training-ready model.
 
