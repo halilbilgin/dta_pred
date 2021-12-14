@@ -76,7 +76,7 @@ echo "==========================================================================
 #singularity exec --nv $PULSAR/hbilgin-2.2.4.py3.simg python $INPUT_FILE
 #module load cuda/9.0
 nvidia-smi
- /cta/users/hbilgin/.conda/envs/dta_pred/bin/python $INPUT_FILE --mongodb="217.112.83.250:80:DTA_PRED"
+ /cta/users/hbilgin/.conda/envs/dta_pred/bin/python $INPUT_FILE --mongodb="192.168.12.1:80:DTA_PRED"
 RET=$?
 
 echo ""

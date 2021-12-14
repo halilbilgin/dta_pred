@@ -23,11 +23,6 @@ if __name__ == '__main__':
         help='Name of the CSV file'
     )
 
-    parser.add_argument(
-        '--input_file',
-        type=str,
-        help='Name of the CSV file'
-    )
 
     parser.add_argument(
         '--arguments',
