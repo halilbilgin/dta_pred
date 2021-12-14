@@ -1,10 +1,11 @@
 import os
+from datetime import datetime
 
+from keras import backend as K
 from sacred import Experiment
 from sacred.observers import MongoObserver
-from datetime import datetime
-from dta_pred import argparser, run_experiment, makedirs, logging
-from keras import backend as K
+
+from dta_pred import argparser, logging, makedirs, run_experiment
 
 if __name__ == "__main__":
     FLAGS = argparser()

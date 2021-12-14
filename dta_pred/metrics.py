@@ -2,9 +2,9 @@
 
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import mean_squared_error, f1_score
 from keras import backend as K
 from scipy.stats import spearmanr
+from sklearn.metrics import f1_score, mean_squared_error
 
 
 def cindex(y_true, y_pred):

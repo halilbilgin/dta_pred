@@ -1,25 +1,19 @@
-from keras.layers import (
-    Input,
-    Embedding,
-    Dense,
-    Conv1D,
-    GlobalMaxPooling1D,
-    MaxPooling1D,
-    GlobalAveragePooling1D,
-    Dropout,
-)
-from keras.layers.normalization import BatchNormalization
-from keras.layers import concatenate
-from keras.models import Model
-import tensorflow as tf
-from dta_pred.metrics import cindex, f1, spearmanr_corr
 import keras.metrics
+import tensorflow as tf
+from keras.layers import (Conv1D, Dense, Dropout, Embedding,
+                          GlobalAveragePooling1D, GlobalMaxPooling1D, Input,
+                          MaxPooling1D, concatenate)
+from keras.layers.normalization import BatchNormalization
+from keras.models import Model
+
+from dta_pred.metrics import cindex, f1, spearmanr_corr
 
 keras.metrics.cindex = cindex
 keras.metrics.f1 = f1
 keras.metrics.spearmanr_corr = spearmanr_corr
-from keras import regularizers
 from keras import backend as K
+from keras import regularizers
+
 from dta_pred import CHARISOSMILEN, CHARPROTLEN
 
 

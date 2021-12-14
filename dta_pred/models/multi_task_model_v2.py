@@ -1,8 +1,9 @@
-from keras.layers import Dense
 import math
-from keras.models import Model
-import numpy as np
+
 import keras
+import numpy as np
+from keras.layers import Dense
+from keras.models import Model
 
 
 class DataGenerator(keras.utils.Sequence):

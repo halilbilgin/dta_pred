@@ -1,16 +1,17 @@
 ## SOME OF THE METHODS AND CLASSES ARE TAKEN FROM github.com/hkmztrk/deepdta
 
+import glob
 import json
 import pickle
-from collections import OrderedDict
-import pandas as pd
-import numpy as np
-from os import path
-import sys
-import glob
-from sklearn.model_selection import KFold, PredefinedSplit, train_test_split
-import urllib.request
 import re
+import sys
+import urllib.request
+from collections import OrderedDict
+from os import path
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import KFold, PredefinedSplit, train_test_split
 from tqdm import tqdm
 
 ## ######################## ##
@@ -390,9 +391,10 @@ class DataSet(object):
                 XD.append(label_smiles(ligands[d], self.SMILEN, self.charsmiset))
 
         elif self.drug_format == "mol2vec":
-            from rdkit.Chem import PandasTools
-            from mol2vec.features import mol2alt_sentence, MolSentence, sentences2vec
             from gensim.models import word2vec
+            from mol2vec.features import (MolSentence, mol2alt_sentence,
+                                          sentences2vec)
+            from rdkit.Chem import PandasTools
 
             word2vec_model = word2vec.Word2Vec.load(self.mol2vec_model_path)
             df_ligands = pd.DataFrame({"smiles": ligands})

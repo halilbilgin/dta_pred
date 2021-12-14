@@ -1,4 +1,5 @@
-from keras.layers import Input, Embedding
+from keras.layers import Embedding, Input
+
 from dta_pred.data_helper import CHARPROTLEN
 
 

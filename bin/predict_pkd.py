@@ -1,13 +1,14 @@
 import argparse
-from keras.models import load_model
-from dta_pred import DataSet
+import json
+import os
+import shutil
+from os import path
+
 import numpy as np
 import pandas as pd
-from os import path
-import shutil
-import json
-from dta_pred import argparser, run_experiment, makedirs, logging
-import os
+from keras.models import load_model
+
+from dta_pred import DataSet, argparser, logging, makedirs, run_experiment
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

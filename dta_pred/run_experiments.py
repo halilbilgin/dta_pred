@@ -1,26 +1,25 @@
 from __future__ import print_function
-import binascii
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from argparse import Namespace
-from keras import regularizers
-from .data_helper import *
-from keras.models import load_model, Model
-from keras.layers import Embedding, Dense
-from dta_pred.models.dnn_model import (
-    auto_model,
-    fully_connected_model,
-    simple_cnn_encoder,
-    inception_encoder,
-    get_pooling,
-)
-from .metrics import *
-from .utils import *
-from .protein_encoding import auto_protein_encoding
-from .drug_encoding import auto_drug_encoding
 
-from .models import *
-from .arguments import logging
+import binascii
 import os
+from argparse import Namespace
+
+from keras import regularizers
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.layers import Dense, Embedding
+from keras.models import Model, load_model
+
+from dta_pred.models.dnn_model import (auto_model, fully_connected_model,
+                                       get_pooling, inception_encoder,
+                                       simple_cnn_encoder)
+
+from .arguments import logging
+from .data_helper import *
+from .drug_encoding import auto_drug_encoding
+from .metrics import *
+from .models import *
+from .protein_encoding import auto_protein_encoding
+from .utils import *
 
 sess = tf.Session(graph=tf.get_default_graph())
 K.set_session(sess)
